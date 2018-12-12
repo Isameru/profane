@@ -11,14 +11,10 @@
 *.gch
 *.pch
 
-# Compiled Dynamic libraries
+# Compiled Dynamic Libraries
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
-*.mod
-*.smod
 
 # Compiled Static libraries
 *.lai
@@ -30,3 +26,12 @@
 *.exe
 *.out
 *.app
+
+# Visual Studio
+/.vs
+*.vcxproj.user
+
+# Output and Intermediate Files
+/_out
+/_temp
+/profane_analyser/perflog.bin
