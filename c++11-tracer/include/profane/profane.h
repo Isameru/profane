@@ -215,15 +215,12 @@ namespace profane
 
                 return startPos;
             }
-
-
         };
 
     } // namespace bin
 
     struct ActorBasedTraits
     {
-        //constexpr static int MaxEventCount = 256*1024;
         using Clock = std::chrono::high_resolution_clock;
 
         #pragma pack(push)

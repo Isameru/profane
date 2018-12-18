@@ -5,24 +5,6 @@
 #include "text_renderer.h"
 #include "workload.h"
 
-struct TimeScaleCamera
-{
-    int64_t leftNs = 0;
-    int64_t widthNs = 10000000000;
-    int topPx = 0;
-    int rendererWidth = 800;
-
-    int64_t NsToPx(int64_t ns)
-    {
-        return (ns - leftNs) * rendererWidth / widthNs;
-    }
-
-    int64_t PxToNs(int x)
-    {
-        return leftNs + x * widthNs / rendererWidth;
-    }
-};
-
 class TimeScaleView
 {
     struct Camera
@@ -43,16 +25,77 @@ class TimeScaleView
         }
     };
 
+    class PixelWideBlockDeferredRenderer
+    {
+        SDL_Renderer* const m_renderer;
+        const SDL_Color m_blockBorderColor;
+        bool m_onset;
+        int m_leftPx;
+        int m_rightPx;
+        int m_topPx;
+
+    public:
+        PixelWideBlockDeferredRenderer(SDL_Renderer* renderer, SDL_Color blockBorderColor) :
+            m_renderer{renderer},
+            m_blockBorderColor{blockBorderColor}
+        {}
+
+        void Reset() {
+            m_onset = false;
+        }
+
+        void MarkBlock(int leftPx, int rightPx, int topPx)
+        {
+            assert(rightPx >= leftPx);
+            assert(rightPx - leftPx <= 1);
+
+            if (!m_onset)
+            {
+                m_leftPx = leftPx;
+                m_rightPx = rightPx;
+                m_topPx = topPx;
+                m_onset = true;
+            }
+            else
+            {
+                if (topPx == m_topPx && leftPx - m_rightPx <= 1)
+                {
+                    assert(leftPx >= m_rightPx);
+                    m_rightPx = rightPx;
+                }
+                else
+                {
+                    Render();
+                    MarkBlock(leftPx, rightPx, topPx);
+                }
+            }
+        }
+
+        void Render()
+        {
+            if (!m_onset) return;
+
+            SDL_SetRenderDrawColor(m_renderer, m_blockBorderColor.r, m_blockBorderColor.g, m_blockBorderColor.b, m_blockBorderColor.a);
+
+            SDL_Rect rect { m_leftPx, m_topPx, std::max(m_rightPx - m_leftPx + 1, 1), 41 };
+            SDL_RenderFillRect(m_renderer, &rect);
+
+            m_onset = false;
+        }
+    };
+
     SDL_Renderer* m_renderer;
     TextRenderer& m_textRenderer;
     Workload* m_workload;
     Camera m_camera;
+    PixelWideBlockDeferredRenderer m_pixelWideBlockDeferredRenderer;
 
 public:
     TimeScaleView(SDL_Renderer* renderer, TextRenderer& textRenderer, Workload& workload) :
         m_renderer{renderer},
         m_textRenderer{textRenderer},
-        m_workload{&workload}
+        m_workload{&workload},
+        m_pixelWideBlockDeferredRenderer{renderer, SDL_Color{18, 8, 8, 255}}
     {}
 
     void HandleEvent(const SDL_Event& generalEvent)
@@ -138,9 +181,7 @@ public:
 
         auto st = m_workload->workers["Main"].workItems[0].startTimeNs;
 
-        //auto& dict = workload->dictionary;
-        int y = 0;
-        int lastRenderedX = -1;
+        m_pixelWideBlockDeferredRenderer.Reset();
 
         for (auto& wi : m_workload->workers["Main"].workItems)
         {
@@ -150,17 +191,29 @@ public:
             auto leftPx = m_camera.NsToPx(startTime);
             auto rightPx = m_camera.NsToPx(stopTime);
 
-            if (leftPx > rendererWidth || rightPx < 0) continue;
+            if (rightPx < 0 || leftPx >= rendererWidth)
+                continue;
 
             leftPx = std::max(leftPx, -1LL);
             rightPx = std::min(rightPx, (int64_t)rendererWidth + 1LL);
 
-            SDL_Rect r1 { static_cast<int>(leftPx), 38 + 40*(int)wi.stackLevel, static_cast<int>(std::max(rightPx - leftPx, 1LL)), 41 };
+            assert(rightPx >= leftPx);
 
-            if (r1.w == 1 && r1.x == lastRenderedX)
+            int blockRect_y = 38 + 40*(int)wi.stackLevel;
+
+            if (rightPx - leftPx <= 1)
+            {
+                m_pixelWideBlockDeferredRenderer.MarkBlock(static_cast<int>(leftPx), static_cast<int>(rightPx), blockRect_y);
                 continue;
+            }
+            else
+            {
+                m_pixelWideBlockDeferredRenderer.Render();
+            }
 
-            if (selectedWorkItem == nullptr && mouseX >= r1.x && mouseY >= r1.y && mouseX < r1.x + r1.w && mouseY < r1.y + r1.h)
+            SDL_Rect blockRect { static_cast<int>(leftPx), blockRect_y, static_cast<int>(std::max(rightPx - leftPx + 1, 1LL)), 41 };
+
+            if (selectedWorkItem == nullptr && mouseX >= blockRect.x && mouseY >= blockRect.y && mouseX < blockRect.x + blockRect.w && mouseY < blockRect.y + blockRect.h)
             {
                 selectedWorkItem = &wi;
                 SDL_SetRenderDrawColor(m_renderer, 143, 81, 75, 255);
@@ -170,20 +223,19 @@ public:
                 SDL_SetRenderDrawColor(m_renderer, 103, 51, 45, 255);
             }
 
-            if (r1.w > 1)
-                SDL_RenderFillRects(m_renderer, &r1, 1);
+            if (blockRect.w > 1)
+                SDL_RenderFillRects(m_renderer, &blockRect, 1);
 
             SDL_SetRenderDrawColor(m_renderer, 18, 8, 8, 255);
-            SDL_RenderDrawRects(m_renderer, &r1, 1);
+            SDL_RenderDrawRects(m_renderer, &blockRect, 1);
 
             if (rightPx - leftPx > 32) {
-                m_textRenderer.RenderText(r1.x + 4, r1.y + 2, wi.routineName, SDL_Color{180, 240, 210, 255});
-                m_textRenderer.RenderText(r1.x + 4, r1.y + 20, FormatDuration(wi.stopTimeNs - wi.startTimeNs, 4).c_str(), SDL_Color{130, 240, 175, 255});
+                m_textRenderer.RenderText(blockRect.x + 4, blockRect.y + 2, wi.routineName, SDL_Color{180, 240, 210, 255});
+                m_textRenderer.RenderText(blockRect.x + 4, blockRect.y + 20, FormatDuration(wi.stopTimeNs - wi.startTimeNs, 4).c_str(), SDL_Color{130, 240, 175, 255});
             }
-
-            ++y;
-            lastRenderedX = r1.x + r1.w - 1;
         }
+
+        m_pixelWideBlockDeferredRenderer.Render();
 
         SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(m_renderer, 180, 240, 210, 135);

@@ -31,21 +31,14 @@ class GameApp
     bool m_quitRequested = false;
     SDL_Window* m_window = nullptr;
     SDL_Renderer* m_renderer = nullptr;
-    SDL_Surface* m_screen = nullptr;
-    SDL_Texture* m_texture = nullptr;
     std::unique_ptr<TextRenderer> m_textRenderer;
     std::unique_ptr<TimeScaleView> m_timeScaleView;
-    TimeScaleCamera timeScaleCamera;
 
 public:
     GameApp()
     {
         m_window = SDL_CreateWindow("Profane Analyser", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 1024, 768, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
-
         m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-
-        m_screen = IMG_Load("assets/ground_tiles.png");
-        m_texture = SDL_CreateTextureFromSurface(m_renderer, m_screen);
 
         m_textRenderer = std::make_unique<TextRenderer>(m_renderer);
         m_timeScaleView = std::make_unique<TimeScaleView>(m_renderer, *m_textRenderer, *workload);
@@ -76,7 +69,10 @@ private:
 
         if (workload)
         {
-            m_textRenderer->OnUpdate();
+            {   PERFTRACE("Main.TextRenderer::OnUpdate");
+                m_textRenderer->OnUpdate();
+            }
+
             PERFTRACE("Main.TimeScaleView::Draw");
             m_timeScaleView->Draw();
         }
@@ -111,7 +107,7 @@ int main(int argc, char* args[])
 
     constexpr char fileName[] = "perflog.bin";
 
-    perfLogger->Enable(fileName, 32 * 1024);
+    perfLogger->Enable(fileName, 128 * 1024);
     PERFTRACE("Main.main");
 
     for (int i = 0; i < 1000; ++i)
@@ -126,8 +122,7 @@ int main(int argc, char* args[])
         {
             profane::bin::FileContent content;
 
-            {
-                PERFTRACE("Main.profane::bin::Read");
+            {   PERFTRACE("Main.profane::bin::Read");
                 content = profane::bin::Read(inFile);
             }
 
