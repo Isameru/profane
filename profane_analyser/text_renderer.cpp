@@ -131,13 +131,13 @@ std::string FormatTimePoint(int64_t timeNs)
                 const auto* const suffix = suffixes[suffixIndex];
                 const auto suffixLength = std::strlen(suffix);
 
-                prependCharIdx -= static_cast<int8_t>(suffixLength);
-                std::strncpy(&text[prependCharIdx + 1], suffix, suffixLength);
-
                 if (!nonZeroEncountered)
                 {
-                    lastCharIdx = prependCharIdx + suffixLength;
+                    lastCharIdx = prependCharIdx;
                 }
+
+                prependCharIdx -= static_cast<int8_t>(suffixLength);
+                std::strncpy(&text[prependCharIdx + 1], suffix, suffixLength);
             }
         }
 
