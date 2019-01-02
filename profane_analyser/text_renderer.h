@@ -5,6 +5,7 @@
 
 std::string FormatDuration(std::chrono::nanoseconds duration, int8_t significantDigits);
 std::string FormatDuration(int64_t durationNs, int8_t significantDigits);
+std::string FormatTimePoint(int64_t timeNs);
 
 class TextRenderer
 {

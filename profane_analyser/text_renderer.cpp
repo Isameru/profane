@@ -105,6 +105,59 @@ std::string FormatDuration(int64_t durationNs, int8_t significantDigits)
     return std::string(&text[prependCharIdx + 1], textLength);
 }
 
+std::string FormatTimePoint(int64_t timeNs)
+{
+    bool negative = timeNs < 0;
+    if (negative) timeNs = -timeNs;
+
+    constexpr const char* const suffixes[] = {"n", u8"\u00B5 ", "m ", "s "};
+
+    char text[32];
+    int8_t digitIdx = 0;
+    int8_t lastCharIdx = 31;
+    int8_t prependCharIdx = lastCharIdx;
+    bool nonZeroEncountered = false;
+
+    while (timeNs > 0)
+    {
+        auto div_res = std::div(timeNs, 10LL);
+
+        if (digitIdx % 3 == 0)
+        {
+            const auto suffixIndex = static_cast<int8_t>(digitIdx / 3);
+
+            if (suffixIndex < static_cast<int8_t>(sizeof(suffixes) / sizeof(suffixes[0])))
+            {
+                const auto* const suffix = suffixes[suffixIndex];
+                const auto suffixLength = std::strlen(suffix);
+
+                prependCharIdx -= static_cast<int8_t>(suffixLength);
+                std::strncpy(&text[prependCharIdx + 1], suffix, suffixLength);
+
+                if (!nonZeroEncountered)
+                {
+                    lastCharIdx = prependCharIdx + suffixLength;
+                }
+            }
+        }
+
+        nonZeroEncountered |= (div_res.rem != 0);
+
+        text[prependCharIdx--] = static_cast<char>(div_res.rem) + '0';
+        ++digitIdx;
+
+        timeNs = div_res.quot;
+    }
+
+    if (digitIdx == 0)
+        text[prependCharIdx--] = '0';
+
+    if (negative)
+        text[prependCharIdx--] = '-';
+
+    return std::string(&text[prependCharIdx + 1], lastCharIdx - prependCharIdx);
+}
+
 TextRenderer::TextRenderer(SDL_Renderer* renderer) :
     m_renderer{renderer}
 {

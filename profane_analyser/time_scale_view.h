@@ -5,6 +5,8 @@
 #include "text_renderer.h"
 #include "workload.h"
 
+constexpr int MinTimeScaleLabelWidthPx = 192;
+
 class TimeScaleView
 {
     struct Camera
@@ -163,14 +165,24 @@ public:
         r0.y = rendererHeight - 20;
         SDL_RenderFillRect(m_renderer, &r0);
 
+        // Draw the time scale top ruler.
+        //
+        const auto ruler = FitTimeScaleRuler();
+        auto labelNs = ruler.firstLabelNs;
 
-        for (int i = 10; i < rendererWidth; i += 200)
+        while (true)
         {
-            auto tns = m_camera.PxToNs(i);
-            m_textRenderer.RenderText(i + 4, 0, FormatDuration(tns, 99).c_str(), SDL_Color{180, 240, 210, 255});
+            const auto labelPx = static_cast<int>(m_camera.NsToPx(labelNs));
+
+            if (labelPx >= rendererWidth)
+                break;
+
+            m_textRenderer.RenderText(labelPx + 4, 0, FormatTimePoint(labelNs).c_str(), SDL_Color{180, 240, 210, 255});
 
             SDL_SetRenderDrawColor(m_renderer, 180, 240, 210, 255);
-            SDL_RenderDrawLine(m_renderer, i, 12, i, 20);
+            SDL_RenderDrawLine(m_renderer, labelPx, 12, labelPx, 20);
+
+            labelNs += ruler.spacingNs;
         }
 
 
@@ -240,6 +252,36 @@ public:
         SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(m_renderer, 180, 240, 210, 135);
         SDL_RenderDrawLine(m_renderer, mouseX, 20, mouseX, rendererHeight - 20);
-        m_textRenderer.RenderText(mouseX + 3, 20, FormatDuration(m_camera.PxToNs(mouseX), 0).c_str(), SDL_Color{180, 240, 210, 135});
+        m_textRenderer.RenderText(mouseX + 3, 20, FormatTimePoint(m_camera.PxToNs(mouseX)).c_str(), SDL_Color{180, 240, 210, 135});
+    }
+
+private:
+    struct TimeScaleRuler
+    {
+        int64_t firstLabelNs;
+        int64_t spacingNs;
+    };
+
+    TimeScaleRuler FitTimeScaleRuler()
+    {
+        const auto minLabelSpacingNs = static_cast<double>(m_camera.widthNs) / (static_cast<double>(m_camera.rendererWidth) / static_cast<double>(MinTimeScaleLabelWidthPx));
+
+        auto labelSpacingNs = std::pow(10.0, std::ceil(std::log10(minLabelSpacingNs)));
+
+        while (true)
+        {
+            const auto half = labelSpacingNs / 2.0;
+
+            if (half < minLabelSpacingNs)
+                break;
+
+            labelSpacingNs = half;
+        }
+
+        const auto cameraLeftPx = m_camera.PxToNs(0);
+
+        const auto firstLabelOffsetPx = std::floor(cameraLeftPx / labelSpacingNs) * labelSpacingNs;
+
+        return { static_cast<int64_t>(firstLabelOffsetPx), static_cast<int64_t>(labelSpacingNs) };
     }
 };
