@@ -21,12 +21,14 @@ struct Workload
     {
         const char* name;
         std::vector<WorkItem> workItems;
+        uint8_t stackLevels;
     };
 
     using WorkerMap = std::map<const char*, Worker, CStrLess>;
 
     std::vector<std::string> dictionary;
     WorkerMap workers;
+    int64_t startTimeNs;
 };
 
 Workload BuildWorkload(profane::bin::FileContent&& fileContent);

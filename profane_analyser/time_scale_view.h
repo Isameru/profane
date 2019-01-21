@@ -6,6 +6,7 @@
 #include "workload.h"
 
 constexpr int MinTimeScaleLabelWidthPx = 192;
+constexpr int64_t MinCameraWidthNs = 1000;
 
 class TimeScaleView
 {
@@ -16,15 +17,9 @@ class TimeScaleView
         int topPx = 0;
         int rendererWidth = 800;
 
-        int64_t NsToPx(int64_t ns)
-        {
-            return (ns - leftNs) * rendererWidth / widthNs;
-        }
-
-        int64_t PxToNs(int x)
-        {
-            return leftNs + x * widthNs / rendererWidth;
-        }
+        int64_t NsToPx(int64_t ns);
+        int64_t PxToNs(int x);
+        void ResetToViewAllWorkload(const Workload& workload);
     };
 
     class PixelWideBlockDeferredRenderer
@@ -37,53 +32,10 @@ class TimeScaleView
         int m_topPx;
 
     public:
-        PixelWideBlockDeferredRenderer(SDL_Renderer* renderer, SDL_Color blockBorderColor) :
-            m_renderer{renderer},
-            m_blockBorderColor{blockBorderColor}
-        {}
-
-        void Reset() {
-            m_onset = false;
-        }
-
-        void MarkBlock(int leftPx, int rightPx, int topPx)
-        {
-            assert(rightPx >= leftPx);
-            assert(rightPx - leftPx <= 1);
-
-            if (!m_onset)
-            {
-                m_leftPx = leftPx;
-                m_rightPx = rightPx;
-                m_topPx = topPx;
-                m_onset = true;
-            }
-            else
-            {
-                if (topPx == m_topPx && leftPx - m_rightPx <= 1)
-                {
-                    assert(leftPx >= m_rightPx);
-                    m_rightPx = rightPx;
-                }
-                else
-                {
-                    Render();
-                    MarkBlock(leftPx, rightPx, topPx);
-                }
-            }
-        }
-
-        void Render()
-        {
-            if (!m_onset) return;
-
-            SDL_SetRenderDrawColor(m_renderer, m_blockBorderColor.r, m_blockBorderColor.g, m_blockBorderColor.b, m_blockBorderColor.a);
-
-            SDL_Rect rect { m_leftPx, m_topPx, std::max(m_rightPx - m_leftPx + 1, 1), 41 };
-            SDL_RenderFillRect(m_renderer, &rect);
-
-            m_onset = false;
-        }
+        PixelWideBlockDeferredRenderer(SDL_Renderer* renderer, SDL_Color blockBorderColor);
+        void Reset();
+        void MarkBlock(int leftPx, int rightPx, int topPx);
+        void Render();
     };
 
     SDL_Renderer* m_renderer;
@@ -93,167 +45,9 @@ class TimeScaleView
     PixelWideBlockDeferredRenderer m_pixelWideBlockDeferredRenderer;
 
 public:
-    TimeScaleView(SDL_Renderer* renderer, TextRenderer& textRenderer, Workload& workload) :
-        m_renderer{renderer},
-        m_textRenderer{textRenderer},
-        m_workload{&workload},
-        m_pixelWideBlockDeferredRenderer{renderer, SDL_Color{18, 8, 8, 255}}
-    {}
-
-    void HandleEvent(const SDL_Event& generalEvent)
-    {
-        switch (generalEvent.type)
-        {
-            case SDL_MOUSEMOTION:
-            {
-                const auto& event = reinterpret_cast<const SDL_MouseMotionEvent&>(generalEvent);
-
-                if (event.state & SDL_BUTTON_RMASK)
-                {
-                    const auto t1 = m_camera.PxToNs(event.x - event.xrel);
-                    const auto t2 = m_camera.PxToNs(event.x);
-                    m_camera.leftNs += t1 - t2;
-                }
-
-                break;
-            }
-
-            case SDL_MOUSEBUTTONDOWN:
-            case SDL_MOUSEBUTTONUP:
-            {
-                const auto& event = reinterpret_cast<const SDL_MouseButtonEvent&>(generalEvent);
-
-                break;
-            }
-
-            case SDL_MOUSEWHEEL:
-            {
-                const auto& event = reinterpret_cast<const SDL_MouseWheelEvent&>(generalEvent);
-
-                int rendererWidth, rendererHeight;
-                SDL_GetRendererOutputSize(m_renderer, &rendererWidth, &rendererHeight);
-
-                int mouseX, mouseY;
-                SDL_GetMouseState(&mouseX, &mouseY);
-
-                int64_t pointedTimeX = m_camera.PxToNs(mouseX);
-                double pointedToLeftRatio = (double)mouseX / (double)rendererWidth;
-                double visibleTimeRadius = (double)m_camera.widthNs;
-
-                visibleTimeRadius = ((double)(visibleTimeRadius) * std::pow(0.75, event.y));
-                visibleTimeRadius = std::max(visibleTimeRadius, 1000.0);
-                m_camera.leftNs = pointedTimeX - int64_t(pointedToLeftRatio * visibleTimeRadius);
-                m_camera.widthNs = (int64_t)(visibleTimeRadius);
-
-                break;
-            }
-        }
-    }
-
-    void Draw()
-    {
-        int rendererWidth, rendererHeight;
-        SDL_GetRendererOutputSize(m_renderer, &rendererWidth, &rendererHeight);
-
-        m_camera.rendererWidth = rendererWidth;
-
-
-        SDL_Rect r0 { 0, 0, rendererWidth, 20 };
-        SDL_SetRenderDrawColor(m_renderer, 43, 43, 47, 255);
-        SDL_RenderFillRect(m_renderer, &r0);
-
-        r0.y = rendererHeight - 20;
-        SDL_RenderFillRect(m_renderer, &r0);
-
-        // Draw the time scale top ruler.
-        //
-        const auto ruler = FitTimeScaleRuler();
-        auto labelNs = ruler.firstLabelNs;
-
-        while (true)
-        {
-            const auto labelPx = static_cast<int>(m_camera.NsToPx(labelNs));
-
-            if (labelPx >= rendererWidth)
-                break;
-
-            m_textRenderer.RenderText(labelPx + 4, 0, FormatTimePoint(labelNs).c_str(), SDL_Color{180, 240, 210, 255});
-
-            SDL_SetRenderDrawColor(m_renderer, 180, 240, 210, 255);
-            SDL_RenderDrawLine(m_renderer, labelPx, 12, labelPx, 20);
-
-            labelNs += ruler.spacingNs;
-        }
-
-
-        int mouseX, mouseY;
-        SDL_GetMouseState(&mouseX, &mouseY);
-
-        Workload::WorkItem* selectedWorkItem = nullptr;
-
-        auto st = m_workload->workers["Main"].workItems[0].startTimeNs;
-
-        m_pixelWideBlockDeferredRenderer.Reset();
-
-        for (auto& wi : m_workload->workers["Main"].workItems)
-        {
-            auto startTime = wi.startTimeNs - st;
-            auto stopTime = wi.stopTimeNs - st;
-
-            auto leftPx = m_camera.NsToPx(startTime);
-            auto rightPx = m_camera.NsToPx(stopTime);
-
-            if (rightPx < 0 || leftPx >= rendererWidth)
-                continue;
-
-            leftPx = std::max(leftPx, -1LL);
-            rightPx = std::min(rightPx, (int64_t)rendererWidth + 1LL);
-
-            assert(rightPx >= leftPx);
-
-            int blockRect_y = 38 + 40*(int)wi.stackLevel;
-
-            if (rightPx - leftPx <= 1)
-            {
-                m_pixelWideBlockDeferredRenderer.MarkBlock(static_cast<int>(leftPx), static_cast<int>(rightPx), blockRect_y);
-                continue;
-            }
-            else
-            {
-                m_pixelWideBlockDeferredRenderer.Render();
-            }
-
-            SDL_Rect blockRect { static_cast<int>(leftPx), blockRect_y, static_cast<int>(std::max(rightPx - leftPx + 1, 1LL)), 41 };
-
-            if (selectedWorkItem == nullptr && mouseX >= blockRect.x && mouseY >= blockRect.y && mouseX < blockRect.x + blockRect.w && mouseY < blockRect.y + blockRect.h)
-            {
-                selectedWorkItem = &wi;
-                SDL_SetRenderDrawColor(m_renderer, 143, 81, 75, 255);
-            }
-            else
-            {
-                SDL_SetRenderDrawColor(m_renderer, 103, 51, 45, 255);
-            }
-
-            if (blockRect.w > 1)
-                SDL_RenderFillRects(m_renderer, &blockRect, 1);
-
-            SDL_SetRenderDrawColor(m_renderer, 18, 8, 8, 255);
-            SDL_RenderDrawRects(m_renderer, &blockRect, 1);
-
-            if (rightPx - leftPx > 32) {
-                m_textRenderer.RenderText(blockRect.x + 4, blockRect.y + 2, wi.routineName, SDL_Color{180, 240, 210, 255});
-                m_textRenderer.RenderText(blockRect.x + 4, blockRect.y + 20, FormatDuration(wi.stopTimeNs - wi.startTimeNs, 4).c_str(), SDL_Color{130, 240, 175, 255});
-            }
-        }
-
-        m_pixelWideBlockDeferredRenderer.Render();
-
-        SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(m_renderer, 180, 240, 210, 135);
-        SDL_RenderDrawLine(m_renderer, mouseX, 20, mouseX, rendererHeight - 20);
-        m_textRenderer.RenderText(mouseX + 3, 20, FormatTimePoint(m_camera.PxToNs(mouseX)).c_str(), SDL_Color{180, 240, 210, 135});
-    }
+    TimeScaleView(SDL_Renderer* renderer, TextRenderer& textRenderer, Workload& workload);
+    void HandleEvent(const SDL_Event& generalEvent);
+    void Draw();
 
 private:
     struct TimeScaleRuler
@@ -262,26 +56,5 @@ private:
         int64_t spacingNs;
     };
 
-    TimeScaleRuler FitTimeScaleRuler()
-    {
-        const auto minLabelSpacingNs = static_cast<double>(m_camera.widthNs) / (static_cast<double>(m_camera.rendererWidth) / static_cast<double>(MinTimeScaleLabelWidthPx));
-
-        auto labelSpacingNs = std::pow(10.0, std::ceil(std::log10(minLabelSpacingNs)));
-
-        while (true)
-        {
-            const auto half = labelSpacingNs / 2.0;
-
-            if (half < minLabelSpacingNs)
-                break;
-
-            labelSpacingNs = half;
-        }
-
-        const auto cameraLeftPx = m_camera.PxToNs(0);
-
-        const auto firstLabelOffsetPx = std::floor(cameraLeftPx / labelSpacingNs) * labelSpacingNs;
-
-        return { static_cast<int64_t>(firstLabelOffsetPx), static_cast<int64_t>(labelSpacingNs) };
-    }
+    TimeScaleRuler FitTimeScaleRuler();
 };

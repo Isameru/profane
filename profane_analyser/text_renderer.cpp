@@ -168,6 +168,7 @@ TextRenderer::TextRenderer(SDL_Renderer* renderer) :
 
 SDL_Texture* TextRenderer::PrepareText(const std::string& text)
 {
+    PERFTRACE("TextRenderer.PrepareText");
     assert(!text.empty());
     auto finding = m_inscriptions.find(text);
     if (finding == std::end(m_inscriptions))
@@ -189,6 +190,7 @@ SDL_Texture* TextRenderer::PrepareText(const std::string& text)
 
 SDL_Rect TextRenderer::RenderText(int x, int y, SDL_Texture* texture, SDL_Color color)
 {
+    PERFTRACE("TextRenderer.RenderText");
     int width, height;
     SDL_QueryTexture(texture, nullptr, nullptr, &width, &height);
 

@@ -2,22 +2,6 @@
 #include "pch.h"
 #include "workload.h"
 
-/*
-struct WorkItem
-{
-uint64_t startTimeNs;
-uint64_t stopTimeNs;
-uint32_t categoryNameIdx;
-uint32_t workerNameIdx;
-uint32_t routineNameIdx;
-uint32_t commentNameIdx;
-uint32_t taskId;
-};
-
-
-std::vector<WorkItem> workItems;
-std::map<uint32_t, std::string> dictionary;
-*/
 
 void UpdateStackLevel(Workload::Worker& worker)
 {
@@ -27,7 +11,7 @@ void UpdateStackLevel(Workload::Worker& worker)
     {
         for (int stackLevel = 0; true; ++stackLevel)
         {
-            if (stackLevel <= static_cast<int>(endTimesStack.size()))
+            if (stackLevel >= static_cast<int>(endTimesStack.size()))
                 endTimesStack.push_back(0);
 
             if (workItem.startTimeNs >= endTimesStack[stackLevel])
@@ -38,6 +22,8 @@ void UpdateStackLevel(Workload::Worker& worker)
             }
         }
     }
+
+    worker.stackLevels = static_cast<uint8_t>(endTimesStack.size());
 }
 
 Workload BuildWorkload(profane::bin::FileContent&& fileContent)
@@ -47,7 +33,10 @@ Workload BuildWorkload(profane::bin::FileContent&& fileContent)
     workload.dictionary = std::move(fileContent.dictionary);
     const auto& dictionary = workload.dictionary;
 
-    //workload.workItems.reserve(fileContent.workItems.size());
+    if (!fileContent.workItems.empty())
+    {
+        workload.startTimeNs = fileContent.workItems[0].startTimeNs;
+    }
 
     for (const auto& workItem : fileContent.workItems)
     {
