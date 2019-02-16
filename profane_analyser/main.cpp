@@ -1,5 +1,6 @@
 
 #include "pch.h"
+#include "config.h"
 #include "text_renderer.h"
 #include "workload.h"
 #include "time_scale_view.h"
@@ -7,7 +8,8 @@
 #include <functional>   // Temporarily here, unless really needed.
 
 std::unique_ptr<Workload> workload;
-PerfLogger* perfLogger;
+PerfLogger* perfLogger = nullptr;
+Config* cfg = nullptr;
 
 namespace sdl {
     class LibraryRuntime {
@@ -66,7 +68,7 @@ private:
 
         PERFTRACE("Main.Draw");
 
-        SDL_SetRenderDrawColor(m_renderer, 32, 32, 32, 255);
+        SDL_SetRenderDrawColor(m_renderer, cfg->BackgroundColor.r, cfg->BackgroundColor.g, cfg->BackgroundColor.b, cfg->BackgroundColor.a);
         SDL_RenderClear(m_renderer);
 
         if (workload)
@@ -103,70 +105,83 @@ public:
 
 int main(int argc, char* args[])
 {
-    std::ofstream outFile;
-    PerfLogger perfLoggerInstance;
-    perfLogger = &perfLoggerInstance;
-
-    constexpr char fileName[] = "perflog.bin";
-
-    perfLogger->Enable(fileName, 128 * 1024);
-    PERFTRACE("Main.main");
-
+    try
     {
-        PERFTRACE("Main.test-1");
+        // Start the performance logger by initializing PerfLogger instance. It is application-wide accessible.
+        //
+        PerfLogger perfLoggerObj;
+        perfLogger = &perfLoggerObj;
 
-        constexpr const char* workerRoutineNames[] = {
-            "z-1.1", "z-1.2", "z-1.3", "z-1.4", "z-1.5", "z-1.6",
-            "z-2.1", "z-2.2", "z-2.3", "z-2.4", "z-2.5", "z-2.6",
-            "z-3.1", "z-3.2", "z-3.3", "z-3.4", "z-3.5", "z-3.6",
-            "z-4.1", "z-4.2", "z-4.3", "z-4.4", "z-4.5", "z-4.6",
-            "z-5.1", "z-5.2", "z-5.3", "z-5.4", "z-5.5", "z-5.6",
-            "z-6.1", "z-6.2", "z-6.3", "z-6.4", "z-6.5", "z-6.6",
-        };
+        constexpr char fileName[] = "perflog.bin";
+        perfLogger->Enable(fileName, 32 * 1024);
+        PERFTRACE("Main.main");
 
-        std::function<void(int, int)> depthTest;
+        // Load the application configuration by initializing Config instance. It is application-wide accessible.
+        //
+        Config cfgObj;
+        cfg = &cfgObj;
 
-        depthTest = [&](int level, int phase) {
-            PERFTRACE(workerRoutineNames[6 * level + phase]);
-
-            if (level > 0)
-                depthTest(level - 1, phase);
-
-            if (phase > 0)
-                depthTest(level, phase - 1);
-        };
-
-        depthTest(5, 5);
-    }
-
-    {
-        PERFTRACE("Main.test-2");
-
-        for (int i = 0; i < 1000; ++i)
         {
-            PERFTRACE("Main.test");
+            PERFTRACE("Main.test-1");
+
+            constexpr const char* workerRoutineNames[] = {
+                "z-1.1", "z-1.2", "z-1.3", "z-1.4", "z-1.5", "z-1.6",
+                "z-2.1", "z-2.2", "z-2.3", "z-2.4", "z-2.5", "z-2.6",
+                "z-3.1", "z-3.2", "z-3.3", "z-3.4", "z-3.5", "z-3.6",
+                "z-4.1", "z-4.2", "z-4.3", "z-4.4", "z-4.5", "z-4.6",
+                "z-5.1", "z-5.2", "z-5.3", "z-5.4", "z-5.5", "z-5.6",
+                "z-6.1", "z-6.2", "z-6.3", "z-6.4", "z-6.5", "z-6.6",
+            };
+
+            std::function<void(int, int)> depthTest;
+
+            depthTest = [&](int level, int phase) {
+                PERFTRACE(workerRoutineNames[6 * level + phase]);
+
+                if (level > 0)
+                    depthTest(level - 1, phase);
+
+                if (phase > 0)
+                    depthTest(level, phase - 1);
+            };
+
+            depthTest(5, 5);
         }
-    }
 
-    {
-        std::ifstream inFile{fileName, std::ifstream::binary};
-
-        if (inFile.is_open())
         {
-            profane::bin::FileContent content;
+            PERFTRACE("Main.test-2");
 
-            {   PERFTRACE("Main.profane::bin::Read");
-                content = profane::bin::Read(inFile);
+            for (int i = 0; i < 1000; ++i)
+            {
+                PERFTRACE("Main.test");
             }
-
-            PERFTRACE("Main.BuildWorkload");
-            workload.reset(new Workload{BuildWorkload(std::move(content))});
         }
+
+        {
+            std::ifstream inFile{fileName, std::ifstream::binary};
+
+            if (inFile.is_open())
+            {
+                profane::bin::FileContent content;
+
+                {   PERFTRACE("Main.profane::bin::Read");
+                    content = profane::bin::Read(inFile);
+                }
+
+                PERFTRACE("Main.BuildWorkload");
+                workload.reset(new Workload{BuildWorkload(std::move(content))});
+            }
+        }
+
+        sdl::LibraryRuntime sdl;
+        GameApp gameApp;
+        gameApp.Run();
+
+        return 0;
     }
-
-    sdl::LibraryRuntime sdl;
-    GameApp gameApp;
-    gameApp.Run();
-
-    return 0;
+    catch (std::exception& ex)
+    {
+        std::cerr << "error: " << ex.what() << std::endl;
+        return -1;
+    }
 }

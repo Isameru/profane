@@ -5,9 +5,6 @@
 #include "text_renderer.h"
 #include "workload.h"
 
-constexpr int MinTimeScaleLabelWidthPx = 192;
-constexpr int64_t MinCameraWidthNs = 1000;
-
 class TimeScaleView
 {
     struct Camera

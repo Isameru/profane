@@ -52,6 +52,9 @@
     <ClInclude Include="time_scale_view.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Font Include="assets\fonts\Ubuntu_Mono\UbuntuMono-Bold.ttf">

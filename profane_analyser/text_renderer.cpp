@@ -1,8 +1,7 @@
 
 #include "pch.h"
 #include "text_renderer.h"
-
-constexpr char MonospaceFontAssetName[] = "assets/fonts/Ubuntu_Mono/UbuntuMono-Regular.ttf";
+#include "config.h"
 
 std::string FormatDuration(std::chrono::nanoseconds duration, int8_t significantDigits)
 {
@@ -163,7 +162,7 @@ TextRenderer::TextRenderer(SDL_Renderer* renderer) :
 {
     assert(m_renderer);
 
-    m_font = TTF_OpenFont(MonospaceFontAssetName, 16);
+    m_font = TTF_OpenFont(cfg->FontFilePath.c_str(), 16);
 }
 
 SDL_Texture* TextRenderer::PrepareText(const std::string& text)

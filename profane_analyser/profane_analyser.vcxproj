@@ -102,6 +102,7 @@
   <ItemGroup>
     <ClInclude Include="..\c++11-tracer\include\profane\profane.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="config.h" />
     <ClInclude Include="text_renderer.h" />
     <ClInclude Include="time_scale_view.h" />
     <ClInclude Include="workload.h" />

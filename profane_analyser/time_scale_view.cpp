@@ -1,5 +1,6 @@
 
 #include "pch.h"
+#include "config.h"
 #include "time_scale_view.h"
 
 int64_t TimeScaleView::Camera::NsToPx(int64_t ns)
@@ -79,7 +80,7 @@ TimeScaleView::TimeScaleView(SDL_Renderer* renderer, TextRenderer& textRenderer,
     m_renderer{renderer},
     m_textRenderer{textRenderer},
     m_workload{&workload},
-    m_pixelWideBlockDeferredRenderer{renderer, SDL_Color{18, 8, 8, 255}}
+    m_pixelWideBlockDeferredRenderer{renderer, cfg->WorkItemBlockBorderColor}
 {
     m_camera.ResetToViewAllWorkload(workload);
 }
@@ -127,8 +128,8 @@ void TimeScaleView::HandleEvent(const SDL_Event& generalEvent)
         double pointedToLeftRatio = (double)mouseX / (double)rendererWidth;
         double visibleTimeRadius = (double)m_camera.widthNs;
 
-        visibleTimeRadius = ((double)(visibleTimeRadius) * std::pow(0.75, event.y));
-        visibleTimeRadius = std::max(visibleTimeRadius, static_cast<double>(MinCameraWidthNs));
+        visibleTimeRadius = ((double)(visibleTimeRadius) * std::pow(cfg->MouseZoomSpeed, event.y));
+        visibleTimeRadius = std::max(visibleTimeRadius, static_cast<double>(cfg->MinCameraWidthNs));
         m_camera.leftNs = pointedTimeX - int64_t(pointedToLeftRatio * visibleTimeRadius);
         m_camera.widthNs = (int64_t)(visibleTimeRadius);
 
@@ -157,10 +158,10 @@ void TimeScaleView::Draw()
         const Workload::WorkItem* selectedWorkItem = nullptr;
 
         // Draw the worker banner.
-        SDL_SetRenderDrawColor(m_renderer, 128, 28, 28, 64);
+        SDL_SetRenderDrawColor(m_renderer, cfg->WorkerBannerBackgroundColor.r, cfg->WorkerBannerBackgroundColor.g, cfg->WorkerBannerBackgroundColor.b, cfg->WorkerBannerBackgroundColor.a);
         SDL_Rect workerBannerRect { 0, workerOffsetY, rendererWidth, 19};
         SDL_RenderFillRect(m_renderer, &workerBannerRect);
-        m_textRenderer.RenderText(3, workerOffsetY + 1, worker.name, SDL_Color{175, 125, 125, 255});
+        m_textRenderer.RenderText(3, workerOffsetY + 1, worker.name, cfg->WorkerBannerTextColor);
         workerOffsetY += 20;
 
         for (auto& wi : worker.workItems)
@@ -208,15 +209,14 @@ void TimeScaleView::Draw()
 
             PERFTRACE("TimeScaleView.Draw WorkItem");
 
-            if (blockRect.w > 1)
-                SDL_RenderFillRects(m_renderer, &blockRect, 1);
+            SDL_RenderFillRect(m_renderer, &blockRect);
 
-            SDL_SetRenderDrawColor(m_renderer, 18, 8, 8, 255);
+            SDL_SetRenderDrawColor(m_renderer, cfg->WorkItemBlockBorderColor.r, cfg->WorkItemBlockBorderColor.g, cfg->WorkItemBlockBorderColor.b, cfg->WorkItemBlockBorderColor.a);
             SDL_RenderDrawRects(m_renderer, &blockRect, 1);
 
             if (rightPx - leftPx > 32) {
-                m_textRenderer.RenderText(blockRect.x + 4, blockRect.y + 2, wi.routineName, SDL_Color{180, 240, 210, 255});
-                m_textRenderer.RenderText(blockRect.x + 4, blockRect.y + 20, FormatDuration(wi.stopTimeNs - wi.startTimeNs, 4).c_str(), SDL_Color{130, 240, 175, 255});
+                m_textRenderer.RenderText(blockRect.x + 4, blockRect.y + 2, wi.routineName, cfg->WorkItemText1Color);
+                m_textRenderer.RenderText(blockRect.x + 4, blockRect.y + 20, FormatDuration(wi.stopTimeNs - wi.startTimeNs, 4).c_str(), cfg->WorkItemText2Color);
             }
         }
 
@@ -230,21 +230,20 @@ void TimeScaleView::Draw()
     {
         PERFTRACE("TimeScaleView.Draw Ruler");
 
-        // top bg
+        // Top bar
         SDL_Rect r0 { 0, 0, rendererWidth, 20 };
-        SDL_SetRenderDrawColor(m_renderer, 43, 43, 47, 255);
+        SDL_SetRenderDrawColor(m_renderer, cfg->TopBottomBarColor.r, cfg->TopBottomBarColor.g, cfg->TopBottomBarColor.b, cfg->TopBottomBarColor.a);
         SDL_RenderFillRect(m_renderer, &r0);
 
-        // bottom bg
+        // Bottom bar
         r0.y = rendererHeight - 20;
         SDL_RenderFillRect(m_renderer, &r0);
 
-        // top line
+        // Top bar horizontal line
         r0.y = 19;
         r0.h = 1;
-        SDL_SetRenderDrawColor(m_renderer, 180, 240, 210, 128);
+        SDL_SetRenderDrawColor(m_renderer, cfg->RulerLine1Color.r, cfg->RulerLine1Color.g, cfg->RulerLine1Color.b, cfg->RulerLine1Color.a);
         SDL_RenderFillRect(m_renderer, &r0);
-
 
         const auto ruler = FitTimeScaleRuler();
         auto labelNs = ruler.firstLabelNs;
@@ -260,7 +259,7 @@ void TimeScaleView::Draw()
             {
                 m_textRenderer.RenderText(labelPx + 4, 3, FormatTimePoint(labelNs).c_str(), SDL_Color{180, 240, 210, 255});
 
-                SDL_SetRenderDrawColor(m_renderer, 180, 240, 210, 255);
+                SDL_SetRenderDrawColor(m_renderer, cfg->RulerLine2Color.r, cfg->RulerLine2Color.g, cfg->RulerLine2Color.b, cfg->RulerLine2Color.a);
                 SDL_RenderDrawLine(m_renderer, labelPx, 12, labelPx, 19);
             }
 
@@ -269,14 +268,14 @@ void TimeScaleView::Draw()
     }
 
     SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(m_renderer, 180, 240, 210, 135);
+    SDL_SetRenderDrawColor(m_renderer, cfg->MouseMarkerColor.r, cfg->MouseMarkerColor.g, cfg->MouseMarkerColor.b, cfg->MouseMarkerColor.a);
     SDL_RenderDrawLine(m_renderer, mouseX, 20, mouseX, rendererHeight - 20);
-    m_textRenderer.RenderText(mouseX + 1, 22, FormatTimePoint(m_camera.PxToNs(mouseX)).c_str(), SDL_Color{180, 240, 210, 135});
+    m_textRenderer.RenderText(mouseX + 1, 22, FormatTimePoint(m_camera.PxToNs(mouseX)).c_str(), cfg->MouseMarkerColor);
 }
 
 TimeScaleView::TimeScaleRuler TimeScaleView::FitTimeScaleRuler()
 {
-    const auto minLabelSpacingNs = static_cast<double>(m_camera.widthNs) / (static_cast<double>(m_camera.rendererWidth) / static_cast<double>(MinTimeScaleLabelWidthPx));
+    const auto minLabelSpacingNs = static_cast<double>(m_camera.widthNs) / (static_cast<double>(m_camera.rendererWidth) / static_cast<double>(cfg->MinTimeScaleLabelWidthPx));
 
     auto labelSpacingNs = std::pow(10.0, std::ceil(std::log10(minLabelSpacingNs)));
 

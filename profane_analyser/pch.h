@@ -3,9 +3,11 @@
 
 #include <map>
 #include <chrono>
+#include <string>
 #include <vector>
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -27,6 +29,9 @@ using Duration = Clock::duration;
 
 using PerfLogger = profane::PerfLogger<profane::ActorBasedTraits>;
 extern PerfLogger* perfLogger;
+
+class Config;
+extern Config* cfg;
 
 #define CONCATENATE2(a, b) a ## b
 #define CONCATENATE(a, b) CONCATENATE2(a, b)
