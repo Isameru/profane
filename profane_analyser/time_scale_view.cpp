@@ -138,6 +138,16 @@ void TimeScaleView::HandleEvent(const SDL_Event& generalEvent)
     }
 }
 
+SDL_Color LerpColor(SDL_Color a, SDL_Color b, float ratio) noexcept
+{
+    return SDL_Color{
+        static_cast<uint8_t>(static_cast<float>(a.r) * (1.0f - ratio) + static_cast<float>(b.r) * ratio),
+        static_cast<uint8_t>(static_cast<float>(a.g) * (1.0f - ratio) + static_cast<float>(b.g) * ratio),
+        static_cast<uint8_t>(static_cast<float>(a.b) * (1.0f - ratio) + static_cast<float>(b.b) * ratio),
+        static_cast<uint8_t>(static_cast<float>(a.a) * (1.0f - ratio) + static_cast<float>(b.a) * ratio)
+    };
+}
+
 void TimeScaleView::Draw()
 {
     int rendererWidth, rendererHeight;
@@ -197,15 +207,15 @@ void TimeScaleView::Draw()
 
             SDL_Rect blockRect { static_cast<int>(leftPx), blockRect_y, static_cast<int>(std::max(rightPx - leftPx + 1, 1LL)), 39 };
 
+            auto bgColor = LerpColor(cfg->WorkItemBackgroundColor_Fast, cfg->WorkItemBackgroundColor_Slow, wi.durationRatio);
+
             if (selectedWorkItem == nullptr && mouseX >= blockRect.x && mouseY >= blockRect.y && mouseX < blockRect.x + blockRect.w && mouseY < blockRect.y + blockRect.h)
             {
                 selectedWorkItem = &wi;
-                SDL_SetRenderDrawColor(m_renderer, 143, 81, 75, 255);
+                bgColor = LerpColor(bgColor, SDL_Color{255, 255, 255, 255}, 0.25f);
             }
-            else
-            {
-                SDL_SetRenderDrawColor(m_renderer, 103, 51, 45, 255);
-            }
+
+            SDL_SetRenderDrawColor(m_renderer, bgColor.r, bgColor.g, bgColor.b, bgColor.a);
 
             PERFTRACE("TimeScaleView.Draw WorkItem");
 

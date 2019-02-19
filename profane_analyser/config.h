@@ -12,14 +12,7 @@ namespace detail
     template<> inline std::string LexicalCast<std::string>(std::string textValue) { return textValue; }
 
     template<> inline SDL_Color LexicalCast<SDL_Color>(std::string textValue) {
-        if (textValue.size() != 8)
-            throw std::runtime_error{"Invalid color: Must be in format RRGGBBAA."};
-
-        return SDL_Color{
-            static_cast<Uint8>((textValue[0] << 4) + textValue[1]),
-            static_cast<Uint8>((textValue[2] << 4) + textValue[3]),
-            static_cast<Uint8>((textValue[4] << 4) + textValue[5]),
-            static_cast<Uint8>((textValue[6] << 4) + textValue[7])};
+        throw std::logic_error{"Not implemented"};
     }
 
     class ConfigBase
@@ -81,6 +74,8 @@ public:
     SDL_Color RulerLine1Color { 180, 240, 210, 128 };
     SDL_Color RulerLine2Color { 180, 240, 210, 255 };
     SDL_Color WorkItemBlockBorderColor { 16, 6, 6, 255 };
+    SDL_Color WorkItemBackgroundColor_Slow {103, 51, 45, 255};
+    SDL_Color WorkItemBackgroundColor_Fast {51, 103, 45, 255};
     SDL_Color WorkItemText1Color { 180, 240, 210, 255 };
     SDL_Color WorkItemText2Color { 130, 240, 175, 255 };
     SDL_Color WorkerBannerBackgroundColor { 128, 28, 28, 64 };
@@ -98,6 +93,8 @@ public:
         RegisterProperty(RulerLine1Color, "ui.ruler.line1-color", "Time scale horizontal ruler line color.");
         RegisterProperty(RulerLine2Color, "ui.ruler.line2-color", "Time scale vertical ruler lines color.");
         RegisterProperty(WorkItemBlockBorderColor, "ui.workitem.border-color", "Work item block border color.");
+        RegisterProperty(WorkItemBackgroundColor_Slow, "ui.workitem.background-color:slow", "Slowest work item background color.");
+        RegisterProperty(WorkItemBackgroundColor_Fast, "ui.workitem.background-color:fast", "Fastes work item background border color.");
         RegisterProperty(WorkItemText1Color, "ui.workitem.text1-color", "Work item routine name caption color.");
         RegisterProperty(WorkItemText2Color, "ui.workitem.text2-color", "Work item duration color.");
         RegisterProperty(WorkerBannerBackgroundColor, "ui.worker.background-color", "Worker banner background color.");

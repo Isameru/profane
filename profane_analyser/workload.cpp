@@ -2,7 +2,6 @@
 #include "pch.h"
 #include "workload.h"
 
-
 void UpdateStackLevel(Workload::Worker& worker)
 {
     std::vector<uint64_t> endTimesStack;
@@ -57,7 +56,40 @@ Workload BuildWorkload(profane::bin::FileContent&& fileContent)
 
     for (auto& workerKV : workload.workers)
     {
-        UpdateStackLevel(workerKV.second);
+        Workload::Worker& worker = workerKV.second;
+        UpdateStackLevel(worker);
+    }
+
+    for (auto& workerKV : workload.workers)
+    {
+        Workload::Worker& worker = workerKV.second;
+
+        for (auto& workItem : worker.workItems)
+        {
+            auto insertion = workload.routineToWorkItemHistogramMap.insert(std::make_pair(workItem.routineName, std::vector<Workload::WorkItem*>{}));
+            auto& histogramWorkItems = insertion.first->second;
+            histogramWorkItems.push_back(&workItem);
+
+        }
+    }
+
+    for (auto& routineWorkItemHistogramKV : workload.routineToWorkItemHistogramMap)
+    {
+        auto& histogramWorkItems = routineWorkItemHistogramKV.second;
+        std::sort(std::begin(histogramWorkItems), std::end(histogramWorkItems), [&](Workload::WorkItem* w1, Workload::WorkItem* w2) {
+            return w1->duration() < w2->duration();
+        });
+
+        auto durationSpan = histogramWorkItems[histogramWorkItems.size() - 1]->duration() - histogramWorkItems[0]->duration();
+
+        for (Workload::WorkItem* workItem : histogramWorkItems)
+        {
+            workItem->durationRatio = 0.0f;
+            if (durationSpan > 0) {
+                workItem->durationRatio = static_cast<float>(workItem->duration() - histogramWorkItems[0]->duration()) / static_cast<float>(durationSpan);
+                assert(workItem->durationRatio >= 0.0f && workItem->durationRatio <= 1.0f);
+            }
+        }
     }
 
     return workload;

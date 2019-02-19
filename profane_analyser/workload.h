@@ -15,6 +15,9 @@ struct Workload
         uint64_t startTimeNs;
         uint64_t stopTimeNs;
         uint8_t stackLevel;
+
+        uint64_t duration() const noexcept { return stopTimeNs - startTimeNs; }
+        float durationRatio;
     };
 
     struct Worker
@@ -29,6 +32,8 @@ struct Workload
     std::vector<std::string> dictionary;
     WorkerMap workers;
     int64_t startTimeNs;
+
+    std::map<const char*, std::vector<WorkItem*>> routineToWorkItemHistogramMap;
 };
 
 Workload BuildWorkload(profane::bin::FileContent&& fileContent);
