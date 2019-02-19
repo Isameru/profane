@@ -173,6 +173,9 @@ int main(int argc, char* args[])
             }
         }
 
+        if (workload.get() == nullptr)
+            return -1;
+
         sdl::LibraryRuntime sdl;
         GameApp gameApp;
         gameApp.Run();
