@@ -50,59 +50,118 @@ namespace profane
 
     namespace bin
     {
-        struct FileContent
-        {
-            #pragma pack(push)
-            #pragma pack(1)
-            struct WorkItem
-            {
-                uint64_t startTimeNs;
-                uint64_t stopTimeNs;
-                uint32_t categoryNameIdx;
-                uint32_t workerNameIdx;
-                uint32_t routineNameIdx;
-                uint32_t commentNameIdx;
-                uint32_t taskId;
-            };
-            #pragma pack(pop)
+        constexpr uint32_t FormatVersion = 2;
 
-            std::vector<WorkItem> workItems;
-            std::vector<std::string> dictionary;
+        using StringIdx = uint32_t;
+
+        #pragma pack(push)
+        #pragma pack(1)
+        struct FileHeader
+        {
+            const char headerText[128] =
+                "PROFANE Peformance Logger Binary Data Stream                   \n"
+                "                                                              \n";
+            constexpr static auto HeaderTextSize = sizeof(headerText) * sizeof(char);
+            static_assert(HeaderTextSize == 128);
         };
 
+        struct SectionHeader
+        {
+            uint64_t dictionaryPos          = -1;
+            uint64_t nextSectionPos         = -1;
+        };
+
+        struct ManifestSectionHeader : public SectionHeader
+        {
+            const uint32_t formatVersion    = FormatVersion;
+            StringIdx programNameIdx        = 0;
+            StringIdx descriptionIdx        = 0;
+            //uint64_t dateTime;
+        };
+
+        struct WorkItemArraySectionHeader : public SectionHeader
+        {
+            uint32_t workItemCount          = 0;
+        };
+
+        struct WorkItem
+        {
+            uint64_t startTimeNs;
+            uint64_t stopTimeNs;
+            StringIdx categoryNameIdx;
+            StringIdx workerNameIdx;
+            StringIdx routineNameIdx;
+            StringIdx commentNameIdx;
+            uint32_t taskId;
+        };
+        #pragma pack(pop)
+
+        struct FileContent
+        {
+            std::vector<std::string> dictionary;
+            StringIdx programNameIdx = 0;
+            StringIdx descriptionIdx = 0;
+            std::vector<WorkItem> workItems;
+        };
+
+        // TODO: Protect this function against corrupted/malicious data.
+        // TODO: Add simple warning message in case of partial data retrieval.
         inline FileContent Read(std::istream& in)
         {
-            in.seekg(-2 * std::streamoff{sizeof(uint64_t)}, std::ios::end);
-            uint64_t workItem0Pos;
-            in.read(reinterpret_cast<char*>(&workItem0Pos), sizeof(workItem0Pos));
-            uint64_t dictionaryPos;
-            in.read(reinterpret_cast<char*>(&dictionaryPos), sizeof(dictionaryPos));
-
-            const auto workItemCount = (dictionaryPos - workItem0Pos) / sizeof(FileContent::WorkItem);
-
             FileContent content;
-            content.workItems.resize(workItemCount);
+            // String at index 0 is always an empty string.
+            content.dictionary.push_back(std::string{});
 
-            in.seekg(workItem0Pos, std::ios::beg);
-            in.read(reinterpret_cast<char*>(&content.workItems.front()), workItemCount * sizeof(FileContent::WorkItem));
+            auto readDictionary = [&](std::streampos pos) {
+                in.seekg(pos);
 
-            in.seekg(dictionaryPos, std::ios::beg);
-            uint32_t stringCount;
-            in.read(reinterpret_cast<char*>(&stringCount), sizeof(stringCount));
+                uint32_t stringCount;
+                in.read(reinterpret_cast<char*>(&stringCount), sizeof(stringCount));
 
-            content.dictionary.resize(stringCount);
+                content.dictionary.reserve(content.dictionary.size() + stringCount);
 
-            for (uint32_t stringIdx = 0; stringIdx < stringCount; ++stringIdx)
-            {
-                uint8_t stringLength;
-                in.read(reinterpret_cast<char*>(&stringLength), sizeof(stringLength));
-                std::string text;
-                if (stringLength > 0)
+                for (uint32_t stringIdx = 0; stringIdx < stringCount; ++stringIdx)
                 {
-                    text.resize(stringLength);
-                    in.read(reinterpret_cast<char*>(&text.front()), std::streamsize{stringLength});
+                    uint8_t stringLength;
+                    in.read(reinterpret_cast<char*>(&stringLength), sizeof(stringLength));
+                    std::string text;
+                    if (stringLength > 0)
+                    {
+                        text.resize(stringLength);
+                        in.read(reinterpret_cast<char*>(&text.front()), std::streamsize{stringLength});
+                    }
+                    content.dictionary.push_back(std::move(text));
                 }
-                content.dictionary[stringIdx] = std::move(text);
+            };
+
+            in.seekg(std::streamoff{sizeof(FileHeader)}, std::ios::beg);
+
+            ManifestSectionHeader manifest;
+            in.read(reinterpret_cast<char*>(&manifest), sizeof(manifest));
+            content.programNameIdx = manifest.programNameIdx;
+            content.descriptionIdx = manifest.descriptionIdx;
+
+            readDictionary(manifest.dictionaryPos);
+
+            std::streampos sectionPos = manifest.nextSectionPos;
+
+            while (sectionPos != -1)
+            {
+                in.seekg(sectionPos);
+
+                WorkItemArraySectionHeader section;
+                in.read(reinterpret_cast<char*>(&section), sizeof(section));
+
+                if (section.workItemCount > 0)
+                {
+                    const auto origWorkItemCount = content.workItems.size();
+                    content.workItems.resize(origWorkItemCount + section.workItemCount);
+                    in.read(reinterpret_cast<char*>(&content.workItems[origWorkItemCount]), section.workItemCount * sizeof(WorkItem));
+
+                    readDictionary(section.dictionaryPos);
+                }
+
+                sectionPos = section.nextSectionPos;
             }
 
             return content;
@@ -110,63 +169,99 @@ namespace profane
 
         class BinaryWriter
         {
+            // Output stream
             std::ostream& m_out;
-            std::map<std::string, uint32_t> m_dictionary { std::make_pair(std::string{}, 0) };
-            uint64_t m_workItem0Pos;
+            // Strings already serialized
+            std::map<std::string, uint32_t> m_savedDictionary { std::make_pair(std::string{}, 0) };
+            // Strings to be serialized upon next section closure
+            std::map<std::string, uint32_t> m_dictionary;
+            // Output position of current section header
+            std::streampos m_lastSectionPos = -1;
+            // Work items in current section
+            std::vector<WorkItem> m_workItems;
 
         public:
-            BinaryWriter(std::ostream& out) :
+            // Number of work items cached before writing them to the output
+            size_t WorkItemsPerSection = 8 * 1024;
+
+            BinaryWriter(std::ostream& out, const std::string& programName, const std::string& description) :
                 m_out{out}
             {
-                WriteHeader();
+                assert(programName.size() <= 255);
+                assert(description.size() <= 255);
 
-                m_workItem0Pos = m_out.tellp();
+                WriteHeader();
+                WriteManifest(programName, description);
+                StartWorkItemArraySection();
             }
 
             void Finish()
             {
-                auto dictionaryPos = (uint64_t)WriteDictionaryDestructively();
-
-                Write(m_workItem0Pos);
-                Write(dictionaryPos);
-
+                EndWorkItemArraySection();
                 m_out.flush();
+
+                assert(m_dictionary.empty());
+                assert(m_workItems.empty());
             }
 
             template<typename Clock>
-            BinaryWriter& operator<<(WorkItemProto<Clock>&& workItemProto)
+            void WriteWorkItem(WorkItemProto<Clock>&& workItemProto)
             {
                 using namespace std::chrono;
                 const uint64_t startTimeNs = duration_cast<nanoseconds>(workItemProto.startTime.time_since_epoch()).count();
                 const uint64_t stopTimeNs = duration_cast<nanoseconds>(workItemProto.stopTime.time_since_epoch()).count();
 
-                Write(startTimeNs);
-                Write(stopTimeNs);
-                WriteTextIndexed(std::move(workItemProto.categoryName));
-                WriteTextIndexed(std::move(workItemProto.workerName));
-                WriteTextIndexed(std::move(workItemProto.routineName));
-                WriteTextIndexed(std::move(workItemProto.comment));
-                Write(workItemProto.taskId);
-                return *this;
+                m_workItems.push_back(WorkItem{
+                    startTimeNs,
+                    stopTimeNs,
+                    IndexString(std::move(workItemProto.categoryName)),
+                    IndexString(std::move(workItemProto.workerName)),
+                    IndexString(std::move(workItemProto.routineName)),
+                    IndexString(std::move(workItemProto.comment)),
+                    workItemProto.taskId});
+
+                if (m_workItems.size() >= WorkItemsPerSection)
+                {
+                    EndWorkItemArraySection();
+                    StartWorkItemArraySection();
+                }
             }
 
         private:
             template<typename T>
-            void Write(const T& value)
+            void WriteAtom(const T& value)
             {
                 m_out.write(reinterpret_cast<const char*>(&value), sizeof(value));
             }
 
+            void WriteAtom(std::streampos value)
+            {
+                WriteAtom(static_cast<uint64_t>(value));
+            }
+
             void WriteTextIndexed(std::string&& text)
             {
-                Write(IndexString(std::move(text)));
+                WriteAtom(IndexString(std::move(text)));
+            }
+
+            uint32_t IndexString(std::string&& text)
+            {
+                const auto iter_1 = m_savedDictionary.find(text);
+                if (iter_1 != std::end(m_savedDictionary)) {
+                    return iter_1->second;
+                }
+
+                const auto idx = static_cast<uint32_t>(m_savedDictionary.size() + m_dictionary.size());
+
+                const auto iter_2 = m_dictionary.insert(std::make_pair(std::move(text), idx));
+                return iter_2.first->second;
             }
 
             void WriteTextImmediate(const std::string& text)
             {
                 assert(text.size() <= 255);
-                const auto textSize = (uint8_t)text.size();
-                Write(textSize);
+                const auto textSize = static_cast<uint8_t>(text.size());
+                WriteAtom(textSize);
                 if (textSize > 0) {
                     m_out.write(&text.front(), textSize);
                 }
@@ -174,24 +269,75 @@ namespace profane
 
             void WriteHeader()
             {
-                m_out.write("PROFANE Peformance Logger Binary Data Stream                    ", 64);
+                FileHeader fileHeader;
+                m_out.write(reinterpret_cast<const char*>(&fileHeader), sizeof(fileHeader));
             }
 
-            uint32_t IndexString(std::string&& text)
+            std::streampos WriteManifest(std::string programName, std::string description)
             {
-                const auto idx = (uint32_t)m_dictionary.size();
-                const auto insertion = m_dictionary.insert(std::make_pair(std::move(text), idx));
-                return insertion.first->second;
+                const auto startPos = m_out.tellp();
+
+                ManifestSectionHeader manifest;
+                manifest.programNameIdx = IndexString(std::move(programName));
+                manifest.descriptionIdx = IndexString(std::move(description));
+                m_out.write(reinterpret_cast<const char*>(&manifest), sizeof(manifest));
+
+                SectionHeader sectionHeader;
+                sectionHeader.dictionaryPos = static_cast<uint64_t>(WriteDictionary());
+                sectionHeader.nextSectionPos = static_cast<uint64_t>(m_out.tellp());
+
+                m_out.seekp(startPos);
+                m_out.write(reinterpret_cast<const char*>(&sectionHeader), sizeof(sectionHeader));
+
+                m_out.seekp(0, std::ios_base::end);
+
+                return startPos;
             }
 
-            std::vector<std::string> OrderDictionaryDestructively()
+            void StartWorkItemArraySection()
             {
+                m_lastSectionPos = m_out.tellp();
+                assert(m_workItems.empty());
+
+                WorkItemArraySectionHeader sectionHeader;
+                sectionHeader.dictionaryPos = std::streampos{-1};
+                sectionHeader.nextSectionPos = std::streampos{-1};
+                sectionHeader.workItemCount = 0;
+                m_out.write(reinterpret_cast<const char*>(&sectionHeader), sizeof(sectionHeader));
+            }
+
+            void EndWorkItemArraySection()
+            {
+                assert(m_lastSectionPos != -1);
+
+                if (!m_workItems.empty()) {
+                    m_out.write(reinterpret_cast<const char*>(&m_workItems[0]), sizeof(m_workItems[0]) * m_workItems.size());
+                }
+
+                WorkItemArraySectionHeader sectionHeader;
+                sectionHeader.dictionaryPos = static_cast<uint64_t>(WriteDictionary());
+                sectionHeader.nextSectionPos = static_cast<uint64_t>(m_out.tellp());
+                sectionHeader.workItemCount = static_cast<uint32_t>(m_workItems.size());
+
+                m_workItems.clear();
+
+                m_out.seekp(m_lastSectionPos);
+                m_out.write(reinterpret_cast<const char*>(&sectionHeader), sizeof(sectionHeader));
+
+                m_out.seekp(0, std::ios_base::end);
+            }
+
+            std::vector<std::string> FetchOrderedDictionary()
+            {
+                const auto startIdx = m_savedDictionary.size();
+
                 std::vector<std::string> orderedDictionary;
                 orderedDictionary.resize(m_dictionary.size());
 
                 for (auto& entryKV : m_dictionary)
                 {
-                    orderedDictionary[entryKV.second] = std::move(entryKV.first);
+                    assert(entryKV.second >= startIdx);
+                    orderedDictionary[entryKV.second - startIdx] = std::move(entryKV.first);
                 }
 
                 m_dictionary.clear();
@@ -199,18 +345,19 @@ namespace profane
                 return orderedDictionary;
             }
 
-            std::streampos WriteDictionaryDestructively()
+            std::streampos WriteDictionary()
             {
                 const auto startPos = m_out.tellp();
 
-                auto orderedDictionary = OrderDictionaryDestructively();
+                auto orderedDictionary = FetchOrderedDictionary();
 
-                const uint32_t stringCount = (uint32_t)orderedDictionary.size();
-                Write(stringCount);
+                const uint32_t stringCount = static_cast<uint32_t>(orderedDictionary.size());
+                WriteAtom(stringCount);
 
-                for (const auto& text : orderedDictionary)
+                for (uint32_t stringIdx = 0; stringIdx < stringCount; ++stringIdx)
                 {
-                    WriteTextImmediate(text);
+                    WriteTextImmediate(orderedDictionary[stringIdx]);
+                    m_savedDictionary.insert(std::make_pair(std::move(orderedDictionary[stringIdx]), static_cast<uint32_t>(m_savedDictionary.size())));
                 }
 
                 return startPos;
@@ -352,7 +499,7 @@ namespace profane
 
             const auto eventCount = std::min(m_eventCount.load(), static_cast<uint32_t>(m_events.size()));
 
-            auto writer = bin::BinaryWriter{*m_out};
+            auto writer = bin::BinaryWriter{*m_out, "Profane Analyser", "The input of the output"};
 
             for (uint32_t eventIdx = 0; eventIdx < eventCount; ++eventIdx)
             {
@@ -365,7 +512,7 @@ namespace profane
 
                 typename Traits::OnWorkItem(event.data, workItemProto);
 
-                writer << std::move(workItemProto);
+                writer.WriteWorkItem(std::move(workItemProto));
             }
 
             writer.Finish();
