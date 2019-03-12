@@ -35,6 +35,9 @@
     <ClCompile Include="time_scale_view.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="histogram_view.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -53,6 +56,9 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="config.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="histogram_view.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

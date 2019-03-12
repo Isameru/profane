@@ -3,6 +3,10 @@
 #include "config.h"
 #include "time_scale_view.h"
 
+// TODO: Remove this lazy hack:
+#include "histogram_view.h"
+extern HistogramView* hack_histogramView;
+
 int64_t TimeScaleView::Camera::NsToPx(int64_t ns)
 {
     return (ns - leftNs) * rendererWidth / widthNs;
@@ -89,52 +93,52 @@ void TimeScaleView::HandleEvent(const SDL_Event& generalEvent)
 {
     switch (generalEvent.type)
     {
-    case SDL_MOUSEMOTION:
-    {
-        const auto& event = reinterpret_cast<const SDL_MouseMotionEvent&>(generalEvent);
-
-        if (event.state & SDL_BUTTON_RMASK)
+        case SDL_MOUSEMOTION:
         {
-            const auto t1 = m_camera.PxToNs(event.x - event.xrel);
-            const auto t2 = m_camera.PxToNs(event.x);
-            m_camera.leftNs += t1 - t2;
+            const auto& event = reinterpret_cast<const SDL_MouseMotionEvent&>(generalEvent);
 
-            m_camera.topPx -= event.yrel;
-            m_camera.topPx = std::max(m_camera.topPx, 0);
+            if (event.state & SDL_BUTTON_RMASK)
+            {
+                const auto t1 = m_camera.PxToNs(event.x - event.xrel);
+                const auto t2 = m_camera.PxToNs(event.x);
+                m_camera.leftNs += t1 - t2;
+
+                m_camera.topPx -= event.yrel;
+                m_camera.topPx = std::max(m_camera.topPx, 0);
+            }
+
+            break;
         }
 
-        break;
-    }
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+        {
+            const auto& event = reinterpret_cast<const SDL_MouseButtonEvent&>(generalEvent);
 
-    case SDL_MOUSEBUTTONDOWN:
-    case SDL_MOUSEBUTTONUP:
-    {
-        const auto& event = reinterpret_cast<const SDL_MouseButtonEvent&>(generalEvent);
+            break;
+        }
 
-        break;
-    }
+        case SDL_MOUSEWHEEL:
+        {
+            const auto& event = reinterpret_cast<const SDL_MouseWheelEvent&>(generalEvent);
 
-    case SDL_MOUSEWHEEL:
-    {
-        const auto& event = reinterpret_cast<const SDL_MouseWheelEvent&>(generalEvent);
+            int rendererWidth, rendererHeight;
+            SDL_GetRendererOutputSize(m_renderer, &rendererWidth, &rendererHeight);
 
-        int rendererWidth, rendererHeight;
-        SDL_GetRendererOutputSize(m_renderer, &rendererWidth, &rendererHeight);
+            int mouseX, mouseY;
+            SDL_GetMouseState(&mouseX, &mouseY);
 
-        int mouseX, mouseY;
-        SDL_GetMouseState(&mouseX, &mouseY);
+            int64_t pointedTimeX = m_camera.PxToNs(mouseX);
+            double pointedToLeftRatio = (double)mouseX / (double)rendererWidth;
+            double visibleTimeRadius = (double)m_camera.widthNs;
 
-        int64_t pointedTimeX = m_camera.PxToNs(mouseX);
-        double pointedToLeftRatio = (double)mouseX / (double)rendererWidth;
-        double visibleTimeRadius = (double)m_camera.widthNs;
+            visibleTimeRadius = ((double)(visibleTimeRadius) * std::pow(cfg->MouseZoomSpeed, event.y));
+            visibleTimeRadius = std::max(visibleTimeRadius, static_cast<double>(cfg->MinCameraWidthNs));
+            m_camera.leftNs = pointedTimeX - int64_t(pointedToLeftRatio * visibleTimeRadius);
+            m_camera.widthNs = (int64_t)(visibleTimeRadius);
 
-        visibleTimeRadius = ((double)(visibleTimeRadius) * std::pow(cfg->MouseZoomSpeed, event.y));
-        visibleTimeRadius = std::max(visibleTimeRadius, static_cast<double>(cfg->MinCameraWidthNs));
-        m_camera.leftNs = pointedTimeX - int64_t(pointedToLeftRatio * visibleTimeRadius);
-        m_camera.widthNs = (int64_t)(visibleTimeRadius);
-
-        break;
-    }
+            break;
+        }
     }
 }
 
@@ -156,7 +160,14 @@ void TimeScaleView::Draw()
     m_camera.rendererWidth = rendererWidth;
 
     int mouseX, mouseY;
-    SDL_GetMouseState(&mouseX, &mouseY);
+    const auto mouseState = SDL_GetMouseState(&mouseX, &mouseY);
+
+    // TODO: Remove this lazy hack.
+    m_textRenderer.RenderText(50, 50, std::to_string(mouseState), cfg->WorkItemText2Color);
+    if (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT))
+    {
+        hack_histogramView->SelectWorkItem(nullptr, -1);
+    }
 
     int workerOffsetY = -m_camera.topPx + 22;
 
@@ -174,8 +185,11 @@ void TimeScaleView::Draw()
         m_textRenderer.RenderText(3, workerOffsetY + 1, worker.name, cfg->WorkerBannerTextColor);
         workerOffsetY += 20;
 
+        int wi_idx = -1;
         for (auto& wi : worker.workItems)
         {
+            ++wi_idx;
+
             auto startTime = wi.startTimeNs - m_workload->startTimeNs;
             auto stopTime = wi.stopTimeNs - m_workload->startTimeNs;
 
@@ -213,6 +227,12 @@ void TimeScaleView::Draw()
             {
                 selectedWorkItem = &wi;
                 bgColor = LerpColor(bgColor, SDL_Color{255, 255, 255, 255}, 0.25f);
+
+                // TODO: Remove this lazy hack.
+                if (selectedWorkItem != nullptr && (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT)))
+                {
+                    hack_histogramView->SelectWorkItem(worker.name, wi_idx);
+                }
             }
 
             SDL_SetRenderDrawColor(m_renderer, bgColor.r, bgColor.g, bgColor.b, bgColor.a);

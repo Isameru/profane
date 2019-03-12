@@ -4,6 +4,7 @@
 #include "text_renderer.h"
 #include "workload.h"
 #include "time_scale_view.h"
+#include "histogram_view.h"
 
 #include <functional>   // Temporarily here, unless really needed.
 
@@ -30,6 +31,9 @@ namespace sdl {
     };
 }
 
+// TODO: Remove this lazy hack.
+HistogramView* hack_histogramView = nullptr;
+
 class GameApp
 {
     bool m_quitRequested = false;
@@ -37,6 +41,7 @@ class GameApp
     SDL_Renderer* m_renderer = nullptr;
     std::unique_ptr<TextRenderer> m_textRenderer;
     std::unique_ptr<TimeScaleView> m_timeScaleView;
+    std::unique_ptr<HistogramView> m_histogramView;
 
 public:
     GameApp()
@@ -46,12 +51,15 @@ public:
 
         m_textRenderer = std::make_unique<TextRenderer>(m_renderer);
         m_timeScaleView = std::make_unique<TimeScaleView>(m_renderer, *m_textRenderer, *workload);
+        m_histogramView = std::make_unique<HistogramView>(m_renderer, *m_textRenderer, *workload);
+        hack_histogramView = m_histogramView.get();
     }
 
 private:
     void HandleEvent(const SDL_Event& generalEvent)
     {
         PERFTRACE("Main.HandleEvent");
+        m_histogramView->HandleEvent(generalEvent);
         m_timeScaleView->HandleEvent(generalEvent);
     }
 
@@ -77,8 +85,15 @@ private:
                 m_textRenderer->OnUpdate();
             }
 
-            PERFTRACE("Main.TimeScaleView::Draw");
-            m_timeScaleView->Draw();
+            {
+                PERFTRACE("Main.TimeScaleView::Draw");
+                m_timeScaleView->Draw();
+            }
+
+            {
+                PERFTRACE("Main.HistogramView::Draw");
+                m_histogramView->Draw();
+            }
         }
 
         PERFTRACE("Main.SDL_RenderPresent");
