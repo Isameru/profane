@@ -36,49 +36,66 @@ TimeScaleView::PixelWideBlockDeferredRenderer::PixelWideBlockDeferredRenderer(SD
     m_blockBorderColor{blockBorderColor}
 {}
 
-void TimeScaleView::PixelWideBlockDeferredRenderer::Reset() {
-    m_onset = false;
+void TimeScaleView::PixelWideBlockDeferredRenderer::Reset(int topPx, int levelCount) {
+    m_topPx = topPx;
+    m_levels.resize(levelCount);
+    for (auto& level : m_levels)
+        level.onset = false;
 }
 
-void TimeScaleView::PixelWideBlockDeferredRenderer::MarkBlock(int leftPx, int rightPx, int topPx)
+void TimeScaleView::PixelWideBlockDeferredRenderer::MarkBlock(int leftPx, int rightPx, int levelIdx)
 {
     assert(rightPx >= leftPx);
     assert(rightPx - leftPx <= 1);
+    assert(levelIdx >= 0 && levelIdx < static_cast<int>(m_levels.size()));
 
-    if (!m_onset)
+    auto& level = m_levels[levelIdx];
+
+    if (!level.onset)
     {
-        m_leftPx = leftPx;
-        m_rightPx = rightPx;
-        m_topPx = topPx;
-        m_onset = true;
+        level.leftPx = leftPx;
+        level.rightPx = rightPx;
+        level.onset = true;
     }
     else
     {
-        if (topPx == m_topPx && leftPx - m_rightPx <= 1)
+        if (leftPx - level.rightPx <= 1)
         {
-            assert(leftPx >= m_rightPx);
-            m_rightPx = rightPx;
+            assert(leftPx >= level.rightPx);
+            level.rightPx = rightPx;
         }
         else
         {
-            Render();
-            MarkBlock(leftPx, rightPx, topPx);
+            Render(levelIdx);
+            MarkBlock(leftPx, rightPx, levelIdx);
         }
     }
 }
 
-void TimeScaleView::PixelWideBlockDeferredRenderer::Render()
+void TimeScaleView::PixelWideBlockDeferredRenderer::Render(int levelIdx)
 {
-    if (!m_onset) return;
+    assert(levelIdx >= 0 && levelIdx < static_cast<int>(m_levels.size()));
+    auto& level = m_levels[levelIdx];
+
+    if (!level.onset)
+        return;
 
     SDL_SetRenderDrawColor(m_renderer, m_blockBorderColor.r, m_blockBorderColor.g, m_blockBorderColor.b, m_blockBorderColor.a);
 
-    SDL_Rect rect { m_leftPx, m_topPx, std::max(m_rightPx - m_leftPx + 1, 1), 39 };
+    // TODO: Get rid of hard-coded block height.
+    int topPx = m_topPx + 40 * levelIdx;
+    SDL_Rect rect { level.leftPx, topPx, std::max(level.rightPx - level.leftPx + 1, 1), 39 };
     SDL_RenderFillRect(m_renderer, &rect);
 
-    m_onset = false;
+    level.onset = false;
 }
 
+void TimeScaleView::PixelWideBlockDeferredRenderer::RenderAll()
+{
+    const int levelCount = static_cast<int>(m_levels.size());
+    for (int levelIdx = 0; levelIdx < levelCount; ++levelIdx)
+        Render(levelIdx);
+}
 
 TimeScaleView::TimeScaleView(SDL_Renderer* renderer, TextRenderer& textRenderer, Workload& workload) :
     m_renderer{renderer},
@@ -175,7 +192,6 @@ void TimeScaleView::Draw()
     {
         const auto& worker = workerKV.second;
 
-        m_pixelWideBlockDeferredRenderer.Reset();
         const Workload::WorkItem* selectedWorkItem = nullptr;
 
         // Draw the worker banner.
@@ -184,6 +200,8 @@ void TimeScaleView::Draw()
         SDL_RenderFillRect(m_renderer, &workerBannerRect);
         m_textRenderer.RenderText(3, workerOffsetY + 1, worker.name, cfg->WorkerBannerTextColor);
         workerOffsetY += 20;
+
+        m_pixelWideBlockDeferredRenderer.Reset(workerOffsetY, worker.stackLevels);
 
         int wi_idx = -1;
         for (auto& wi : worker.workItems)
@@ -211,12 +229,8 @@ void TimeScaleView::Draw()
 
             if (rightPx - leftPx <= 1)
             {
-                m_pixelWideBlockDeferredRenderer.MarkBlock(static_cast<int>(leftPx), static_cast<int>(rightPx), blockRect_y);
+                m_pixelWideBlockDeferredRenderer.MarkBlock(static_cast<int>(leftPx), static_cast<int>(rightPx), wi.stackLevel);
                 continue;
-            }
-            else
-            {
-                m_pixelWideBlockDeferredRenderer.Render();
             }
 
             SDL_Rect blockRect { static_cast<int>(leftPx), blockRect_y, static_cast<int>(std::max(rightPx - leftPx + 1, int64_t{1})), 39 };
@@ -251,9 +265,9 @@ void TimeScaleView::Draw()
         }
 
         workerOffsetY += 1 + 40 * worker.stackLevels;
-    }
 
-    m_pixelWideBlockDeferredRenderer.Render();
+        m_pixelWideBlockDeferredRenderer.RenderAll();
+    }
 
     // Draw the time scale top ruler.
     //

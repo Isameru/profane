@@ -21,18 +21,25 @@ class TimeScaleView
 
     class PixelWideBlockDeferredRenderer
     {
+        struct Level
+        {
+            bool onset;
+            int leftPx;
+            int rightPx;
+        };
+
         SDL_Renderer* const m_renderer;
         const SDL_Color m_blockBorderColor;
-        bool m_onset;
-        int m_leftPx;
-        int m_rightPx;
-        int m_topPx;
+
+        int m_topPx = 0;
+        std::vector<Level> m_levels;
 
     public:
         PixelWideBlockDeferredRenderer(SDL_Renderer* renderer, SDL_Color blockBorderColor);
-        void Reset();
-        void MarkBlock(int leftPx, int rightPx, int topPx);
-        void Render();
+        void Reset(int topPx, int levelCount);
+        void MarkBlock(int leftPx, int rightPx, int levelIdx);
+        void Render(int levelIdx);
+        void RenderAll();
     };
 
     SDL_Renderer* m_renderer;
