@@ -4,6 +4,7 @@
 #include <map>
 #include <chrono>
 #include <string>
+#include <memory>
 #include <vector>
 #include <cassert>
 #include <cstdint>

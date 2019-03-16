@@ -8,8 +8,15 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{3417BBDE-C02F-4E4C-AE15-617644FC86F0}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
+		CMakeLists.txt = CMakeLists.txt
 		LICENSE = LICENSE
 		README.md = README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cmake", "cmake", "{2DDDCC10-9077-4471-893B-19F32DA633E4}"
+	ProjectSection(SolutionItems) = preProject
+		cmake\FindSDL2_image.cmake = cmake\FindSDL2_image.cmake
+		cmake\FindSDL2_ttf.cmake = cmake\FindSDL2_ttf.cmake
 	EndProjectSection
 EndProject
 Global
@@ -25,6 +32,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2DDDCC10-9077-4471-893B-19F32DA633E4} = {3417BBDE-C02F-4E4C-AE15-617644FC86F0}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {F8C9387B-CBB5-4727-8865-5B68D17377F7}

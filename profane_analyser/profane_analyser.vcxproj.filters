@@ -80,5 +80,6 @@
     <Text Include="assets\fonts\Ubuntu_Mono\UFL.txt">
       <Filter>assets\fonts\Ubuntu_Mono</Filter>
     </Text>
+    <Text Include="CMakeLists.txt" />
   </ItemGroup>
 </Project>

@@ -417,7 +417,7 @@ namespace profane
         std::ostream* m_out = nullptr;
         const char* m_outFileName = nullptr;
         typename Traits::Clock::time_point m_startTime;
-        std::atomic<uint32_t> m_eventCount = 0;
+        std::atomic<uint32_t> m_eventCount = {0};
         std::vector<Event> m_events;
 
     public:
@@ -448,7 +448,7 @@ namespace profane
             void TraceStop() noexcept
             {
                 if (m_event != nullptr)
-                    m_event->stopTime = typename Traits::Clock::now();
+                    m_event->stopTime = Traits::Clock::now();
             }
 
             friend class PerfLogger<Traits>;
@@ -462,7 +462,7 @@ namespace profane
 
         void Enable(std::ostream& out, uint32_t eventCount)
         {
-            m_startTime = typename Traits::Clock::now();
+            m_startTime = Traits::Clock::now();
             m_events.resize(eventCount);
             m_out = &out;
             assert(m_outFileName == nullptr);
@@ -470,7 +470,7 @@ namespace profane
 
         void Enable(const char* outFileName, uint32_t eventCount)
         {
-            m_startTime = typename Traits::Clock::now();
+            m_startTime = Traits::Clock::now();
             m_events.resize(eventCount);
             m_outFileName = outFileName;
             assert(m_out == nullptr);
@@ -484,7 +484,7 @@ namespace profane
 
         void Finish()
         {
-            auto stopTime = typename Traits::Clock::now();
+            auto stopTime = Traits::Clock::now();
 
             std::ofstream outFile;
 
@@ -510,7 +510,7 @@ namespace profane
 
                 WorkItemProto<typename Traits::Clock> workItemProto{event.startTime, event.stopTime};
 
-                typename Traits::OnWorkItem(event.data, workItemProto);
+                Traits::OnWorkItem(event.data, workItemProto);
 
                 writer.WriteWorkItem(std::move(workItemProto));
             }
@@ -526,7 +526,7 @@ namespace profane
                 return {};
 
             Event& event = m_events[eventIdx];
-            event.startTime = typename Traits::Clock::now();
+            event.startTime = Traits::Clock::now();
             // event.stopTime is already set to 0
             event.data = std::move(eventData);
             return {&event};

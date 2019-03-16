@@ -45,7 +45,7 @@ std::string FormatDuration(int64_t durationNs, int8_t significantDigits)
 
     while (durationNs > 0)
     {
-        auto div_res = std::div(durationNs, 10LL);
+        auto div_res = std::div(durationNs, int64_t{10});
 
         text[prependCharIdx--] = static_cast<char>(div_res.rem) + '0';
         ++digitIdx;
@@ -119,7 +119,7 @@ std::string FormatTimePoint(int64_t timeNs)
 
     while (timeNs > 0)
     {
-        auto div_res = std::div(timeNs, 10LL);
+        auto div_res = std::div(timeNs, int64_t{10});
 
         if (digitIdx % 3 == 0)
         {

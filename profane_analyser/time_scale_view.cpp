@@ -202,8 +202,8 @@ void TimeScaleView::Draw()
             if (leftPx >= rendererWidth)
                 break;
 
-            leftPx = std::max(leftPx, -1LL);
-            rightPx = std::min(rightPx, (int64_t)rendererWidth + 1LL);
+            leftPx = std::max(leftPx, int64_t{-1});
+            rightPx = std::min(rightPx, int64_t{rendererWidth + 1});
 
             assert(rightPx >= leftPx);
 
@@ -219,7 +219,7 @@ void TimeScaleView::Draw()
                 m_pixelWideBlockDeferredRenderer.Render();
             }
 
-            SDL_Rect blockRect { static_cast<int>(leftPx), blockRect_y, static_cast<int>(std::max(rightPx - leftPx + 1, 1LL)), 39 };
+            SDL_Rect blockRect { static_cast<int>(leftPx), blockRect_y, static_cast<int>(std::max(rightPx - leftPx + 1, int64_t{1})), 39 };
 
             auto bgColor = LerpColor(cfg->WorkItemBackgroundColor_Fast, cfg->WorkItemBackgroundColor_Slow, wi.durationRatio);
 
