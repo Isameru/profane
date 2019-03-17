@@ -75,6 +75,7 @@ public:
     SDL_Color RulerLine2Color { 180, 240, 210, 255 };
     SDL_Color WorkItemBlockBorderColor { 16, 6, 6, 255 };
     SDL_Color WorkItemBackgroundColor_Slow {103, 51, 45, 255};
+    SDL_Color WorkItemBackgroundColor_Mid {150, 120, 50, 255};
     SDL_Color WorkItemBackgroundColor_Fast {51, 103, 45, 255};
     SDL_Color WorkItemText1Color { 180, 240, 210, 255 };
     SDL_Color WorkItemText2Color { 130, 240, 175, 255 };
@@ -94,6 +95,7 @@ public:
         RegisterProperty(RulerLine2Color, "ui.ruler.line2-color", "Time scale vertical ruler lines color.");
         RegisterProperty(WorkItemBlockBorderColor, "ui.workitem.border-color", "Work item block border color.");
         RegisterProperty(WorkItemBackgroundColor_Slow, "ui.workitem.background-color:slow", "Slowest work item background color.");
+        RegisterProperty(WorkItemBackgroundColor_Mid, "ui.workitem.background-color:mid", "Average or median work item background color.");
         RegisterProperty(WorkItemBackgroundColor_Fast, "ui.workitem.background-color:fast", "Fastes work item background border color.");
         RegisterProperty(WorkItemText1Color, "ui.workitem.text1-color", "Work item routine name caption color.");
         RegisterProperty(WorkItemText2Color, "ui.workitem.text2-color", "Work item duration color.");

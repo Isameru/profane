@@ -169,6 +169,14 @@ SDL_Color LerpColor(SDL_Color a, SDL_Color b, float ratio) noexcept
     };
 }
 
+SDL_Color LerpColor(SDL_Color a, SDL_Color b, SDL_Color c, float ratio) noexcept
+{
+    if (ratio < 0.5f)
+        return LerpColor(a, b, 2.0f * ratio);
+    else
+        return LerpColor(b, c, 2.0f * (ratio - 0.5f));
+}
+
 void TimeScaleView::Draw()
 {
     int rendererWidth, rendererHeight;
@@ -235,7 +243,8 @@ void TimeScaleView::Draw()
 
             SDL_Rect blockRect { static_cast<int>(leftPx), blockRect_y, static_cast<int>(std::max(rightPx - leftPx + 1, int64_t{1})), 39 };
 
-            auto bgColor = LerpColor(cfg->WorkItemBackgroundColor_Fast, cfg->WorkItemBackgroundColor_Slow, wi.durationRatio);
+            const float colorRatio = wi.durationOrderRatio;
+            auto bgColor = LerpColor(cfg->WorkItemBackgroundColor_Fast, cfg->WorkItemBackgroundColor_Mid, cfg->WorkItemBackgroundColor_Slow, colorRatio);
 
             if (selectedWorkItem == nullptr && mouseX >= blockRect.x && mouseY >= blockRect.y && mouseX < blockRect.x + blockRect.w && mouseY < blockRect.y + blockRect.h)
             {

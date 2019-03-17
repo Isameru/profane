@@ -76,18 +76,31 @@ Workload BuildWorkload(profane::bin::FileContent&& fileContent)
     for (auto& routineWorkItemHistogramKV : workload.routineToWorkItemHistogramMap)
     {
         auto& histogramWorkItems = routineWorkItemHistogramKV.second;
+
         std::sort(std::begin(histogramWorkItems), std::end(histogramWorkItems), [&](Workload::WorkItem* w1, Workload::WorkItem* w2) {
             return w1->duration() < w2->duration();
         });
 
         auto durationSpan = histogramWorkItems[histogramWorkItems.size() - 1]->duration() - histogramWorkItems[0]->duration();
+        const auto workItemCount = static_cast<int>(histogramWorkItems.size());
 
-        for (Workload::WorkItem* workItem : histogramWorkItems)
+        for (int workItemIdx = 0; workItemIdx < workItemCount; ++workItemIdx)
         {
+            Workload::WorkItem* workItem = histogramWorkItems[workItemIdx];
+
             workItem->durationRatio = 0.0f;
-            if (durationSpan > 0) {
+            workItem->durationOrderRatio = 0.0f;
+
+            if (durationSpan > 0)
+            {
                 workItem->durationRatio = static_cast<float>(workItem->duration() - histogramWorkItems[0]->duration()) / static_cast<float>(durationSpan);
                 assert(workItem->durationRatio >= 0.0f && workItem->durationRatio <= 1.0f);
+            }
+
+            if (!histogramWorkItems.empty())
+            {
+                workItem->durationOrderRatio = static_cast<float>(workItemIdx) / static_cast<float>(workItemCount);
+                assert(workItem->durationOrderRatio >= 0.0f && workItem->durationOrderRatio <= 1.0f);
             }
         }
     }

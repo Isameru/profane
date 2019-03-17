@@ -18,6 +18,7 @@ struct Workload
 
         uint64_t duration() const noexcept { return stopTimeNs - startTimeNs; }
         float durationRatio;
+        float durationOrderRatio;
     };
 
     struct Worker
