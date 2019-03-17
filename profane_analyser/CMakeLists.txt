@@ -22,6 +22,8 @@ add_executable(profane_analyser
 	text_renderer.h
 	time_scale_view.cpp
 	time_scale_view.h
+	utils.cpp
+	utils.h
 	workload.cpp
 	workload.h)
 

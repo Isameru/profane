@@ -106,6 +106,7 @@
     <ClInclude Include="config.h" />
     <ClInclude Include="text_renderer.h" />
     <ClInclude Include="time_scale_view.h" />
+    <ClInclude Include="utils.h" />
     <ClInclude Include="workload.h" />
   </ItemGroup>
   <ItemGroup>
@@ -117,6 +118,7 @@
     </ClCompile>
     <ClCompile Include="text_renderer.cpp" />
     <ClCompile Include="time_scale_view.cpp" />
+    <ClCompile Include="utils.cpp" />
     <ClCompile Include="workload.cpp" />
   </ItemGroup>
   <ItemGroup>
