@@ -1,11 +1,11 @@
 # profane
 :construction: Performance tracer for C++11 programs and visualization tool
 
-Currently just a Proof of Concept.
-
-The first run of Profane Analyser dumps the performance log to `perflog.bin`.
-The second run reads the file and presents it in a form of a flame graph.
+Build and run Profane Analyser with option `-o perflog.bin` to gather the performance log data.
+Then run with parameter `perflog.bin` to open it for introspection.
 
 Supported platforms: Linux (CMake/gcc) and Windows (Visual C++)
 
-The project contains Windows x64 runtime binaries of SDL2 library (with Image and TTF extensions).
+Directory `assets` has to be copied to the directory of the built executable.
+The project contains Windows x64 runtime binaries of SDL2 library (with Image and TTF extensions). Those have to be copied to there also.
+If you are running on Linux, you have to install these packages first: `sudo apt install g++ cmake libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev`
