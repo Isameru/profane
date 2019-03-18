@@ -173,7 +173,6 @@ void TimeScaleView::Draw()
     const auto mouseState = SDL_GetMouseState(&mouseX, &mouseY);
 
     // TODO: Remove this lazy hack.
-    m_textRenderer.RenderText(50, 50, std::to_string(mouseState), cfg->WorkItemText2Color);
     if (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT))
     {
         hack_histogramView->SelectWorkItem(nullptr, -1);
@@ -188,8 +187,15 @@ void TimeScaleView::Draw()
         const Workload::WorkItem* selectedWorkItem = nullptr;
 
         // Draw the worker banner.
-        SDL_SetRenderDrawColor(m_renderer, cfg->WorkerBannerBackgroundColor.r, cfg->WorkerBannerBackgroundColor.g, cfg->WorkerBannerBackgroundColor.b, cfg->WorkerBannerBackgroundColor.a);
         SDL_Rect workerBannerRect { 0, workerOffsetY, rendererWidth, 19};
+
+        SDL_Color workBannerBgColor = cfg->WorkerBannerBackgroundColor;
+        if (mouseY >= workerBannerRect.y && mouseY < workerBannerRect.y + workerBannerRect.h)
+        {
+            workBannerBgColor = LerpColor(workBannerBgColor, SDL_Color{255, 255, 255, 255}, 0.2f);
+        }
+
+        SDL_SetRenderDrawColor(m_renderer, workBannerBgColor.r, workBannerBgColor.g, workBannerBgColor.b, workBannerBgColor.a);
         SDL_RenderFillRect(m_renderer, &workerBannerRect);
         m_textRenderer.RenderText(3, workerOffsetY + 1, worker.name, cfg->WorkerBannerTextColor);
         workerOffsetY += 20;

@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <numeric>
 #include <iostream>
 #include <algorithm>
 
