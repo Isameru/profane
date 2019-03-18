@@ -1,5 +1,6 @@
 
 #include "pch.h"
+#include "cli.h"
 #include "config.h"
 #include "text_renderer.h"
 #include "workload.h"
@@ -122,13 +123,28 @@ int main(int argc, char* args[])
 {
     try
     {
+        auto parsedCommandLine = ParseCommandLine(argc, args);
+
+        if (parsedCommandLine.printHelp)
+        {
+            PrintHelp();
+            return 0;
+        }
+
         // Start the performance logger by initializing PerfLogger instance. It is application-wide accessible.
         //
         PerfLogger perfLoggerObj;
-        perfLogger = &perfLoggerObj;
 
-        constexpr char fileName[] = "perflog.bin";
-        perfLogger->Enable(fileName, 32 * 1024);
+        if (parsedCommandLine.perfLogOutputFilePath != nullptr)
+        {
+            perfLogger = &perfLoggerObj;
+
+            if (parsedCommandLine.perfLogMaxSamples == 0)
+                parsedCommandLine.perfLogMaxSamples = 128 * 1024;
+
+            perfLogger->Enable(parsedCommandLine.perfLogOutputFilePath, parsedCommandLine.perfLogMaxSamples);
+        }
+
         PERFTRACE("Main.main");
 
         // Load the application configuration by initializing Config instance. It is application-wide accessible.
@@ -172,8 +188,9 @@ int main(int argc, char* args[])
             }
         }
 
+        if (parsedCommandLine.inputFilePath != nullptr)
         {
-            std::ifstream inFile{fileName, std::ifstream::binary};
+            std::ifstream inFile{parsedCommandLine.inputFilePath, std::ifstream::binary};
 
             if (inFile.is_open())
             {
@@ -185,6 +202,10 @@ int main(int argc, char* args[])
 
                 PERFTRACE("Main.BuildWorkload");
                 workload.reset(new Workload{BuildWorkload(std::move(content))});
+            }
+            else
+            {
+                throw std::runtime_error("Cannot open input file '" + std::string{parsedCommandLine.inputFilePath} + "' for reading");
             }
         }
 

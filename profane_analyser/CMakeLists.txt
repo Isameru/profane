@@ -12,6 +12,8 @@ include_directories(
 	../c++11-tracer/include)
 
 add_executable(profane_analyser
+	cli.cpp
+	cli.h
 	config.h
 	histogram_view.cpp
 	histogram_view.h

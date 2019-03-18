@@ -101,6 +101,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\c++11-tracer\include\profane\profane.h" />
+    <ClInclude Include="cli.h" />
     <ClInclude Include="histogram_view.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="config.h" />
@@ -110,6 +111,7 @@
     <ClInclude Include="workload.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="cli.cpp" />
     <ClCompile Include="histogram_view.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp">
