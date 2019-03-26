@@ -33,3 +33,5 @@ target_link_libraries(profane_analyser
 	${SDL2_LIBRARIES}
 	${SDL2_IMAGE_LIBRARIES}
 	${SDL2_TTF_LIBRARIES})
+
+set_property(TARGET profane_analyser PROPERTY CXX_STANDARD 17)

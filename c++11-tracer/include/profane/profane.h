@@ -33,6 +33,17 @@
 
 namespace profane
 {
+    namespace detail
+    {
+        template<typename T, typename OtherT>
+        T exchange(T& v, OtherT&& other)
+        {
+            auto v_copy = std::move(v);
+            v = std::forward<OtherT>(other);
+            return v_copy;
+        }
+    }
+
     #pragma pack(push)
     #pragma pack(1)
     template<typename Clock>
@@ -62,8 +73,8 @@ namespace profane
                 "PROFANE Peformance Logger Binary Data Stream                   \n"
                 "                                                              \n";
             constexpr static auto HeaderTextSize = sizeof(headerText) * sizeof(char);
-            static_assert(HeaderTextSize == 128);
         };
+        static_assert(sizeof(FileHeader) == 128, "profane::bin::File Header is expected to be 128 bytes long");
 
         struct SectionHeader
         {
@@ -431,7 +442,7 @@ namespace profane
             Tracer() = default;
             Tracer(const Tracer&) = delete;
 
-            Tracer(Tracer&& other) noexcept : m_event{std::exchange(other.m_event, nullptr)} {}
+            Tracer(Tracer&& other) noexcept : m_event{detail::exchange(other.m_event, nullptr)} {}
 
             ~Tracer() noexcept
             {
