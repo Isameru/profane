@@ -162,7 +162,7 @@ TextRenderer::TextRenderer(SDL_Renderer* renderer) :
 {
     assert(m_renderer);
 
-    m_font = TTF_OpenFont(cfg->FontFilePath.c_str(), 16);
+    m_font = TTF_OpenFont((cfg->ProgramDirPath + cfg->FontFilePath).c_str(), 16);
 }
 
 SDL_Texture* TextRenderer::PrepareText(const std::string& text)

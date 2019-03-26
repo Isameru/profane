@@ -152,6 +152,8 @@ int main(int argc, char* args[])
         Config cfgObj;
         cfg = &cfgObj;
 
+        cfgObj.ProgramDirPath = parsedCommandLine.programDirPath;
+
         {
             PERFTRACE("Main.test-1");
 

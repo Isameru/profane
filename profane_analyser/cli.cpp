@@ -2,10 +2,23 @@
 #include "pch.h"
 #include "cli.h"
 
+std::string ExtractProgramDirPath(const std::string& programFilePath)
+{
+    auto f1 = programFilePath.rfind('\\');
+    auto f2 = programFilePath.rfind('/');
+
+    size_t f3 = 0;
+    if (f1 != std::string::npos) f3 = f1;
+    if (f2 != std::string::npos) f3 = std::max(f3, f2);
+
+    return programFilePath.substr(0, f3 + 1);
+}
+
 ParsedCommandLine ParseCommandLine(int argc, char* args[])
 {
     ParsedCommandLine cl;
     cl.programFilePath = args[0];
+    cl.programDirPath = ExtractProgramDirPath(cl.programFilePath);
 
     if (argc == 1)
         cl.printHelp = true;

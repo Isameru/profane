@@ -83,6 +83,7 @@ public:
     SDL_Color WorkerBannerTextColor { 175, 125, 125, 255 };
     SDL_Color MouseMarkerColor { 180, 240, 210, 135 };
     double MouseZoomSpeed = 0.75;
+    std::string ProgramDirPath;
     std::string FontFilePath = "assets/fonts/Ubuntu_Mono/UbuntuMono-Regular.ttf";
 
     Config()

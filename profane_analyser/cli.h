@@ -5,7 +5,8 @@
 
 struct ParsedCommandLine
 {
-    const char* programFilePath = nullptr;
+    std::string programFilePath;
+    std::string programDirPath;
     bool printHelp = false;
     const char* perfLogOutputFilePath = nullptr;
     uint32_t perfLogMaxSamples = 0;
