@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2018 Mariusz £apiñski
+// Copyright (c) 2018-2019 Mariusz £apiñski
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,7 @@
 #pragma once
 
 #include <map>
+#include <ctime>
 #include <atomic>
 #include <chrono>
 #include <string>
@@ -35,34 +36,41 @@ namespace profane
 {
     namespace detail
     {
+        // Replaces the value of obj with new_value and returns the old value of obj.
+        // This utility function is available since C++14 (see: https://en.cppreference.com/w/cpp/utility/exchange).
         template<typename T, typename OtherT>
-        T exchange(T& v, OtherT&& other)
+        T exchange(T& obj, OtherT&& new_value)
         {
-            auto v_copy = std::move(v);
-            v = std::forward<OtherT>(other);
-            return v_copy;
+            auto obj_copy = std::move(obj);
+            obj = std::forward<OtherT>(new_value);
+            return obj_copy;
         }
     }
 
+    // A prototype of a single work item serialized to a file by the BinaryWriter, understandable by the Profane Analyser.
+    // As custom PerfLogger Traits may trace any time-stamped data, finally it must fill up this structure.
+    //
     #pragma pack(push)
     #pragma pack(1)
     template<typename Clock>
     struct WorkItemProto
     {
-        typename Clock::time_point startTime;
-        typename Clock::time_point stopTime;
-        std::string categoryName;
-        std::string workerName;
-        std::string routineName;
-        std::string comment;
-        uint32_t taskId;
+        typename Clock::time_point startTime;   // Time stamp of the work beginning.
+        typename Clock::time_point stopTime;    // Time stamp of the work end.
+        std::string categoryName;               // Name of the group of workers.
+        std::string workerName;                 // Name of the execution thread or actor's handler.
+        std::string routineName;                // Name of the function or routine. (routines are stacked within a worker)
+        std::string comment;                    // Additional description, comment.
+        uint32_t taskId;                        // Numeric identifier of a task or a flow.
     };
     #pragma pack(pop)
 
     namespace bin
     {
-        constexpr uint32_t FormatVersion = 2;
+        // The version of binary format. It is written to the manifest section of a file.
+        constexpr uint32_t FormatVersion = 3;
 
+        // The string index within a dictionary (which is an array of strings). An index of 0 is always an empty string.
         using StringIdx = uint32_t;
 
         #pragma pack(push)
@@ -74,25 +82,43 @@ namespace profane
                 "                                                              \n";
             constexpr static auto HeaderTextSize = sizeof(headerText) * sizeof(char);
         };
-        static_assert(sizeof(FileHeader) == 128, "profane::bin::File Header is expected to be 128 bytes long");
+        static_assert(sizeof(FileHeader) == 128, "profane::bin::FileHeader is expected to be 128 bytes long");
 
         struct SectionHeader
         {
-            uint64_t dictionaryPos          = -1;
-            uint64_t nextSectionPos         = -1;
+            uint64_t dictionaryPos;
+            uint64_t nextSectionPos;
         };
 
-        struct ManifestSectionHeader : public SectionHeader
+        struct ManifestSection : public SectionHeader
         {
-            const uint32_t formatVersion    = FormatVersion;
-            StringIdx programNameIdx        = 0;
-            StringIdx descriptionIdx        = 0;
-            //uint64_t dateTime;
+            uint32_t formatVersion;
+            StringIdx programNameIdx;
+            StringIdx descriptionIdx;
+            uint64_t dateTime;
         };
 
         struct WorkItemArraySectionHeader : public SectionHeader
         {
-            uint32_t workItemCount          = 0;
+            uint32_t workItemCount;
+
+            uint64_t startTimeNsBase;
+            uint64_t durationTimeNsBase;
+            StringIdx categoryNameIdxBase;
+            StringIdx workerNameIdxBase;
+            StringIdx routineNameIdxBase;
+            StringIdx commentNameIdxBase;
+            uint32_t taskIdBase;
+
+            // Byte sizes of individual attributes (from 0 to 8).
+            // 0 means that the attribute is not encoded at all.
+            uint8_t startTimeNsSize : 4;
+            uint8_t durationTimeNsSize : 4;
+            uint8_t categoryNameIdxSize : 4;
+            uint8_t workerNameIdxSize : 4;
+            uint8_t routineNameIdxSize : 4;
+            uint8_t commentNameIdxSize : 4;
+            uint8_t taskIdSize : 4;
         };
 
         struct WorkItem
@@ -109,10 +135,122 @@ namespace profane
 
         struct FileContent
         {
-            std::vector<std::string> dictionary;
+            struct Issue
+            {
+                std::string code;
+                std::string message;
+            };
+
+            std::vector<std::string> dictionary { "" };     // String at index 0 in the dictionary is always an empty string.
             StringIdx programNameIdx = 0;
             StringIdx descriptionIdx = 0;
             std::vector<WorkItem> workItems;
+            std::vector<Issue> issues;
+        };
+
+        // Utility class for packing integers in a space efficient manner.
+        // Usage:
+        //   1. Instantiate the class, determining whether 0 is an often value.
+        //   2. Call Peek() for every value in the packed sequence.
+        //   3. Call DeterminePackingSize() to determine the packing size.
+        //   4. You may call base() to get the minimal packable value (not including 0 if ZeroIsAbsolute).
+        //   5. Call Pack() for every value in the packed sequence.
+        //
+        template<typename IntT, bool ZeroIsAbsolute>
+        class IntBitPacker
+        {
+            IntT m_base = std::numeric_limits<IntT>::max();
+            IntT m_max = 0;
+            uint8_t m_packingSize = sizeof(IntT);
+
+        public:
+            void Peek(IntT value)
+            {
+                if (!ZeroIsAbsolute || value != 0)
+                    m_base = std::min(m_base, value);
+                m_max = std::max(m_max, value);
+            }
+
+            IntT base()
+            {
+                assert(m_base <= m_max && "Call DeterminePackingSize() first");
+                return m_base;
+            }
+
+            uint8_t DeterminePackingSize()
+            {
+                if (m_max == 0)
+                    m_base = 0;
+
+                auto valueRange = m_max - m_base;
+
+                if (ZeroIsAbsolute && valueRange > 0)
+                    ++valueRange;
+
+                uint64_t fullByteValue = 0;
+                m_packingSize = 0;
+
+                while (valueRange > fullByteValue)
+                {
+                    fullByteValue = (fullByteValue << 8) | 0xFF;
+                    ++m_packingSize;
+                }
+
+                return m_packingSize;
+            }
+
+            void Pack(std::ostream& out, IntT value)
+            {
+                if (m_packingSize == 0)
+                    return;
+
+                if (ZeroIsAbsolute) {
+                    assert(value == 0 || (value >= m_base && value <= m_max));
+                    if (value > 0)
+                        value -= m_base - 1;
+                }
+                else {
+                    assert(value >= m_base && value <= m_max);
+                    value -= m_base;
+                }
+
+                out.write(reinterpret_cast<const char*>(&value), m_packingSize);
+            }
+        };
+
+        template<typename IntT, bool ZeroIsAbsolute>
+        class IntBitUnpacker
+        {
+            const IntT m_base;
+            const uint8_t m_packingSize;
+
+        public:
+            IntBitUnpacker(IntT base, uint8_t packingSize) :
+                m_base{base},
+                m_packingSize{packingSize}
+            {}
+
+            IntT Unpack(std::istream& in)
+            {
+                auto value = IntT{0};
+
+                if (m_packingSize > 0)
+                {
+                    in.read(reinterpret_cast<char*>(&value), m_packingSize);
+                }
+
+                if (ZeroIsAbsolute)
+                {
+                    if (value != 0)
+                        value += m_base - 1;
+                }
+                else
+                {
+                    value += m_base;
+                }
+
+                return value;
+            }
         };
 
         // TODO: Protect this function against corrupted/malicious data.
@@ -120,8 +258,6 @@ namespace profane
         inline FileContent Read(std::istream& in)
         {
             FileContent content;
-            // String at index 0 is always an empty string.
-            content.dictionary.push_back(std::string{});
 
             auto readDictionary = [&](std::streampos pos) {
                 in.seekg(pos);
@@ -145,9 +281,11 @@ namespace profane
                 }
             };
 
+            in.seekg(std::streamoff{0}, std::ios::beg);
+
             in.seekg(std::streamoff{sizeof(FileHeader)}, std::ios::beg);
 
-            ManifestSectionHeader manifest;
+            ManifestSection manifest;
             in.read(reinterpret_cast<char*>(&manifest), sizeof(manifest));
             content.programNameIdx = manifest.programNameIdx;
             content.descriptionIdx = manifest.descriptionIdx;
@@ -160,17 +298,41 @@ namespace profane
             {
                 in.seekg(sectionPos);
 
-                WorkItemArraySectionHeader section;
+                WorkItemArraySectionHeader section {};
                 in.read(reinterpret_cast<char*>(&section), sizeof(section));
 
-                if (section.workItemCount > 0)
-                {
-                    const auto origWorkItemCount = content.workItems.size();
-                    content.workItems.resize(origWorkItemCount + section.workItemCount);
-                    in.read(reinterpret_cast<char*>(&content.workItems[origWorkItemCount]), section.workItemCount * sizeof(WorkItem));
+                if (section.workItemCount == 0)
+                    break;
 
-                    readDictionary(section.dictionaryPos);
+                const auto origWorkItemCount = content.workItems.size();
+                content.workItems.reserve(origWorkItemCount + section.workItemCount);
+
+                IntBitUnpacker<uint64_t, false> startTimeNsUnpacker { section.startTimeNsBase, section.startTimeNsSize };
+                IntBitUnpacker<uint64_t, false> durationNsPacker { section.durationTimeNsBase, section.durationTimeNsSize };
+                IntBitUnpacker<StringIdx, true> categoryNameIdxPacker { section.categoryNameIdxBase, section.categoryNameIdxSize };
+                IntBitUnpacker<StringIdx, true> workerNameIdxPacker { section.workerNameIdxBase, section.workerNameIdxSize };
+                IntBitUnpacker<StringIdx, true> routineNameIdxPacker { section.routineNameIdxBase, section.routineNameIdxSize };
+                IntBitUnpacker<StringIdx, true> commentNameIdxPacker { section.commentNameIdxBase, section.commentNameIdxSize };
+                IntBitUnpacker<uint32_t, false> taskIdPacker { section.taskIdBase, section.taskIdSize };
+
+                for (uint32_t workItemIdx = 0; workItemIdx < section.workItemCount; ++workItemIdx)
+                {
+                    const auto startTimeNs = startTimeNsUnpacker.Unpack(in);
+
+                    auto workItem = WorkItem{
+                        startTimeNs,
+                        startTimeNs + durationNsPacker.Unpack(in),
+                        categoryNameIdxPacker.Unpack(in),
+                        workerNameIdxPacker.Unpack(in),
+                        routineNameIdxPacker.Unpack(in),
+                        commentNameIdxPacker.Unpack(in),
+                        taskIdPacker.Unpack(in)
+                    };
+
+                    content.workItems.push_back(std::move(workItem));
                 }
+
+                readDictionary(section.dictionaryPos);
 
                 sectionPos = section.nextSectionPos;
             }
@@ -183,9 +345,9 @@ namespace profane
             // Output stream
             std::ostream& m_out;
             // Strings already serialized
-            std::map<std::string, uint32_t> m_savedDictionary { std::make_pair(std::string{}, 0) };
+            std::map<std::string, StringIdx> m_savedDictionary { std::make_pair(std::string{}, 0) };
             // Strings to be serialized upon next section closure
-            std::map<std::string, uint32_t> m_dictionary;
+            std::map<std::string, StringIdx> m_dictionary;
             // Output position of current section header
             std::streampos m_lastSectionPos = -1;
             // Work items in current section
@@ -215,7 +377,11 @@ namespace profane
                 assert(m_workItems.empty());
             }
 
-            template<typename Clock>
+            // Adds the work item data to be written to a file.
+            // By default the data is not serialized immediately, but rather stored in a vector.
+            // When the number of items to be serialized reaches some specific threshold (WorkItemsPerSection), all the items are written to a file, enclosed within a single section.
+            //
+            template<bool AllowFlushWrite = true, typename Clock>
             void WriteWorkItem(WorkItemProto<Clock>&& workItemProto)
             {
                 using namespace std::chrono;
@@ -231,7 +397,7 @@ namespace profane
                     IndexString(std::move(workItemProto.comment)),
                     workItemProto.taskId});
 
-                if (m_workItems.size() >= WorkItemsPerSection)
+                if (AllowFlushWrite && m_workItems.size() >= WorkItemsPerSection)
                 {
                     EndWorkItemArraySection();
                     StartWorkItemArraySection();
@@ -255,19 +421,28 @@ namespace profane
                 WriteAtom(IndexString(std::move(text)));
             }
 
-            uint32_t IndexString(std::string&& text)
+            // Given a string, it looks for matching string in dictionaries.
+            // First in dictionary of already serialized strings, if not found then in dictionary of string to be serialized upon current section closure.
+            // If the string is not present in both dictionaries, it is added to the latter dictionary.
+            // Returns the unique index of the string in the dictionary.
+            //
+            StringIdx IndexString(std::string&& text)
             {
                 const auto iter_1 = m_savedDictionary.find(text);
                 if (iter_1 != std::end(m_savedDictionary)) {
                     return iter_1->second;
                 }
 
-                const auto idx = static_cast<uint32_t>(m_savedDictionary.size() + m_dictionary.size());
+                const auto idx = static_cast<StringIdx>(m_savedDictionary.size() + m_dictionary.size());
 
                 const auto iter_2 = m_dictionary.insert(std::make_pair(std::move(text), idx));
                 return iter_2.first->second;
             }
 
+            // Writes the string to the file.
+            // First comes the byte of string size (0 - 255), then the null-terminated string content.
+            // The string may contain multi-byte characters, but the null-termination is a single byte '\0'.
+            //
             void WriteTextImmediate(const std::string& text)
             {
                 assert(text.size() <= 255);
@@ -278,21 +453,37 @@ namespace profane
                 }
             }
 
+            // Writes the file header.
+            // It starts at the file beginning and has not the form of a section.
+            // First 7 bytes are magic: PROFANE
+            //
             void WriteHeader()
             {
                 FileHeader fileHeader;
                 m_out.write(reinterpret_cast<const char*>(&fileHeader), sizeof(fileHeader));
             }
 
+            // Writes the file manifest section describing its content.
+            // Returns the file offset of the section beginning.
+            //
             std::streampos WriteManifest(std::string programName, std::string description)
             {
                 const auto startPos = m_out.tellp();
 
-                ManifestSectionHeader manifest;
-                manifest.programNameIdx = IndexString(std::move(programName));
-                manifest.descriptionIdx = IndexString(std::move(description));
+                // Write the manifest section.
+                // This is always the first section of the file and it occurs once.
+                //
+                ManifestSection manifest;
+                manifest.dictionaryPos      = std::streampos{-1};
+                manifest.nextSectionPos     = std::streampos{-1};
+                manifest.formatVersion      = FormatVersion;
+                manifest.programNameIdx     = IndexString(std::move(programName));
+                manifest.descriptionIdx     = IndexString(std::move(description));
+                manifest.dateTime           = static_cast<uint64_t>(std::time(nullptr));
                 m_out.write(reinterpret_cast<const char*>(&manifest), sizeof(manifest));
 
+                // Write the dictionary of the manifest and patch the section header.
+                //
                 SectionHeader sectionHeader;
                 sectionHeader.dictionaryPos = static_cast<uint64_t>(WriteDictionary());
                 sectionHeader.nextSectionPos = static_cast<uint64_t>(m_out.tellp());
@@ -310,10 +501,11 @@ namespace profane
                 m_lastSectionPos = m_out.tellp();
                 assert(m_workItems.empty());
 
-                WorkItemArraySectionHeader sectionHeader;
-                sectionHeader.dictionaryPos = std::streampos{-1};
-                sectionHeader.nextSectionPos = std::streampos{-1};
-                sectionHeader.workItemCount = 0;
+                WorkItemArraySectionHeader sectionHeader {};
+                sectionHeader.dictionaryPos     = std::streampos{-1};
+                sectionHeader.nextSectionPos    = std::streampos{-1};
+                sectionHeader.workItemCount     = 0;
+                // The other member data are irrelevant unless populated by the work items.
                 m_out.write(reinterpret_cast<const char*>(&sectionHeader), sizeof(sectionHeader));
             }
 
@@ -321,14 +513,10 @@ namespace profane
             {
                 assert(m_lastSectionPos != -1);
 
-                if (!m_workItems.empty()) {
-                    m_out.write(reinterpret_cast<const char*>(&m_workItems[0]), sizeof(m_workItems[0]) * m_workItems.size());
-                }
+                WorkItemArraySectionHeader sectionHeader = WriteWorkItems();
 
-                WorkItemArraySectionHeader sectionHeader;
                 sectionHeader.dictionaryPos = static_cast<uint64_t>(WriteDictionary());
                 sectionHeader.nextSectionPos = static_cast<uint64_t>(m_out.tellp());
-                sectionHeader.workItemCount = static_cast<uint32_t>(m_workItems.size());
 
                 m_workItems.clear();
 
@@ -336,6 +524,65 @@ namespace profane
                 m_out.write(reinterpret_cast<const char*>(&sectionHeader), sizeof(sectionHeader));
 
                 m_out.seekp(0, std::ios_base::end);
+            }
+
+            WorkItemArraySectionHeader WriteWorkItems()
+            {
+                WorkItemArraySectionHeader sectionHeader;
+                sectionHeader.dictionaryPos     = std::streampos{-1};
+                sectionHeader.nextSectionPos    = std::streampos{-1};
+                sectionHeader.workItemCount     = static_cast<uint32_t>(m_workItems.size());
+
+                IntBitPacker<uint64_t, false> startTimeNsPacker;
+                IntBitPacker<uint64_t, false> durationNsPacker;         // When writing to a file, the work item duration is stored instead of stopTime, as it is much smaller.
+                IntBitPacker<StringIdx, true> categoryNameIdxPacker;
+                IntBitPacker<StringIdx, true> workerNameIdxPacker;
+                IntBitPacker<StringIdx, true> routineNameIdxPacker;
+                IntBitPacker<StringIdx, true> commentNameIdxPacker;
+                IntBitPacker<uint32_t, false> taskIdPacker;
+
+                for (const auto& workItem : m_workItems)
+                {
+                    auto durationNs = workItem.stopTimeNs - workItem.startTimeNs;
+
+                    startTimeNsPacker.Peek(workItem.startTimeNs);
+                    durationNsPacker.Peek(durationNs);
+                    categoryNameIdxPacker.Peek(workItem.categoryNameIdx);
+                    workerNameIdxPacker.Peek(workItem.workerNameIdx);
+                    routineNameIdxPacker.Peek(workItem.routineNameIdx);
+                    commentNameIdxPacker.Peek(workItem.commentNameIdx);
+                    taskIdPacker.Peek(workItem.taskId);
+                }
+
+                sectionHeader.startTimeNsSize       = startTimeNsPacker.DeterminePackingSize();
+                sectionHeader.startTimeNsBase       = startTimeNsPacker.base();
+                sectionHeader.durationTimeNsSize    = durationNsPacker.DeterminePackingSize();
+                sectionHeader.durationTimeNsBase    = durationNsPacker.base();
+                sectionHeader.categoryNameIdxSize   = categoryNameIdxPacker.DeterminePackingSize();
+                sectionHeader.categoryNameIdxBase   = categoryNameIdxPacker.base();
+                sectionHeader.workerNameIdxSize     = workerNameIdxPacker.DeterminePackingSize();
+                sectionHeader.workerNameIdxBase     = workerNameIdxPacker.base();
+                sectionHeader.routineNameIdxSize    = routineNameIdxPacker.DeterminePackingSize();
+                sectionHeader.routineNameIdxBase    = routineNameIdxPacker.base();
+                sectionHeader.commentNameIdxSize    = commentNameIdxPacker.DeterminePackingSize();
+                sectionHeader.commentNameIdxBase    = commentNameIdxPacker.base();
+                sectionHeader.taskIdSize            = taskIdPacker.DeterminePackingSize();
+                sectionHeader.taskIdBase            = taskIdPacker.base();
+
+                for (const auto& workItem : m_workItems)
+                {
+                    auto durationNs = workItem.stopTimeNs - workItem.startTimeNs;
+
+                    startTimeNsPacker.Pack(m_out, workItem.startTimeNs);
+                    durationNsPacker.Pack(m_out, durationNs);
+                    categoryNameIdxPacker.Pack(m_out, workItem.categoryNameIdx);
+                    workerNameIdxPacker.Pack(m_out, workItem.workerNameIdx);
+                    routineNameIdxPacker.Pack(m_out, workItem.routineNameIdx);
+                    commentNameIdxPacker.Pack(m_out, workItem.commentNameIdx);
+                    taskIdPacker.Pack(m_out, workItem.taskId);
+                }
+
+                return sectionHeader;
             }
 
             std::vector<std::string> FetchOrderedDictionary()
@@ -394,9 +641,12 @@ namespace profane
         static void OnWorkItem(const EventData& eventData, WorkItemProto<Clock>& workItemProto)
         {
             SplitWorkerRoutineName(eventData.workerRoutineName, workItemProto.workerName, workItemProto.routineName);
+            workItemProto.taskId = eventData.taskId;
         }
 
     private:
+        // Splits an examplar string "Worker.Routine" into "Worker" and "Routine".
+        //
         static void SplitWorkerRoutineName(const char* workerRoutineName, std::string& outWorkerName, std::string& outRoutineName)
         {
             using namespace std;
@@ -408,12 +658,11 @@ namespace profane
         }
     };
 
-    // Collects the event logs and generates the usable data at the end.
+    // Collects the event logs and generates the usable data upon finish.
     //
     template<typename Traits>
     class PerfLogger
     {
-    private:
         #pragma pack(push)
         #pragma pack(1)
         struct Event
@@ -424,7 +673,6 @@ namespace profane
         };
         #pragma pack(pop)
 
-    private:
         std::ostream* m_out = nullptr;
         const char* m_outFileName = nullptr;
         typename Traits::Clock::time_point m_startTime;
@@ -432,6 +680,8 @@ namespace profane
         std::vector<Event> m_events;
 
     public:
+        // The purpose of a Tracer object is put a timestamp on Event::stopTime of the specified event object upon its destruction.
+        //
         class Tracer
         {
             Event* m_event = nullptr;
@@ -465,7 +715,9 @@ namespace profane
             friend class PerfLogger<Traits>;
         };
 
-    public:
+        std::string ProgramName;
+        std::string Description;
+
         ~PerfLogger()
         {
             Finish();
@@ -476,7 +728,7 @@ namespace profane
             m_startTime = Traits::Clock::now();
             m_events.resize(eventCount);
             m_out = &out;
-            assert(m_outFileName == nullptr);
+            assert(m_outFileName == nullptr && "PerfLogger has been already enabled to write to a file.");
         }
 
         void Enable(const char* outFileName, uint32_t eventCount)
@@ -484,7 +736,26 @@ namespace profane
             m_startTime = Traits::Clock::now();
             m_events.resize(eventCount);
             m_outFileName = outFileName;
-            assert(m_out == nullptr);
+            assert(m_out == nullptr && "PerfLogger has been already enabled to write to a stream.");
+        }
+
+        void Disable()
+        {
+            /*const auto eventCount =*/ StopNewEvents();
+
+            /* It is better to leave m_events intact, so the following check is not necessary.
+
+                // Check whether all the events are finished (have set stopTime).
+                for (uint32_t eventIdx = 0; eventIdx < eventCount; ++eventIdx)
+                {
+                    Event& event = m_events[eventIdx];
+                    if (event.stopTime == typename Traits::Clock::time_point{})
+                        throw std::runtime_error("Unable to disable a PerfLogger while there are pending tracers");
+                }
+            */
+
+            m_out = nullptr;
+            m_outFileName = {};
         }
 
         template<typename... EventDataParams>
@@ -508,9 +779,9 @@ namespace profane
                 m_out = &outFile;
             }
 
-            const auto eventCount = std::min(m_eventCount.load(), static_cast<uint32_t>(m_events.size()));
+            const auto eventCount = StopNewEvents();
 
-            auto writer = bin::BinaryWriter{*m_out, "Profane Analyser", "The input of the output"};
+            auto writer = bin::BinaryWriter{*m_out, ProgramName, Description};
 
             for (uint32_t eventIdx = 0; eventIdx < eventCount; ++eventIdx)
             {
@@ -519,7 +790,7 @@ namespace profane
                 if (event.stopTime.time_since_epoch().count() == 0)
                     event.stopTime = stopTime;
 
-                WorkItemProto<typename Traits::Clock> workItemProto{event.startTime, event.stopTime};
+                WorkItemProto<typename Traits::Clock> workItemProto { event.startTime, event.stopTime };
 
                 Traits::OnWorkItem(event.data, workItemProto);
 
@@ -527,20 +798,38 @@ namespace profane
             }
 
             writer.Finish();
+
+            m_out = nullptr;
+            m_outFileName = {};
         }
 
     private:
+        // Timestamps the beginning of a new event.
+        // Returns a Tracer, which will timestamp the end upon its destructor.
+        //
         Tracer TraceEvent(typename Traits::EventData&& eventData)
         {
             const auto eventIdx = m_eventCount++;
             if (eventIdx >= m_events.size())
+            {
+                // Consider: --m_eventCount;
                 return {};
+            }
 
             Event& event = m_events[eventIdx];
             event.startTime = Traits::Clock::now();
             // event.stopTime is already set to 0
             event.data = std::move(eventData);
             return {&event};
+        }
+
+        // Prevents the logger from starting new events.
+        // Returns the number of currently stored events.
+        //
+        uint32_t StopNewEvents()
+        {
+            const auto eventsSize = static_cast<uint32_t>(m_events.size());
+            return std::min(m_eventCount.exchange(eventsSize), eventsSize);
         }
     };
 

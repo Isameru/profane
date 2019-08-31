@@ -24,7 +24,8 @@ void TimeScaleView::Camera::ResetToViewAllWorkload(const Workload& workload)
     widthNs = 0;
     for (const auto& workerKV : workload.workers)
     {
-        for (const auto& workItem : workerKV.second.workItems)
+        const auto& worker = workerKV.second;
+        for (const auto& workItem : worker.workItems)
         {
             widthNs = std::max(widthNs, static_cast<int64_t>(workItem.stopTimeNs - workload.startTimeNs));
         }

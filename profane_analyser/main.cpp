@@ -142,6 +142,8 @@ int main(int argc, char* args[])
             if (parsedCommandLine.perfLogMaxSamples == 0)
                 parsedCommandLine.perfLogMaxSamples = 128 * 1024;
 
+            perfLogger->ProgramName = "Profane Analyser";
+
             perfLogger->Enable(parsedCommandLine.perfLogOutputFilePath, parsedCommandLine.perfLogMaxSamples);
         }
 
